@@ -12,12 +12,12 @@ Bladr er et selvstændigt program og indeholder ingen kode fra ACDSee.
 
 Der er to muligheder under **Releases** på GitHub:
 
-- **`Bladr-0.3.5-Setup.exe`** – installationsprogram til Windows.
+- **`Bladr-0.3.6-Setup.exe`** – installationsprogram til Windows.
 - **`Bladr.exe`** – portabel enkeltfil, som kan kopieres hvor som helst hen.
 
 ### Installation
 
-Kør `Bladr-0.3.5-Setup.exe`. Installationen er **per bruger** og kræver
+Kør `Bladr-0.3.6-Setup.exe`. Installationen er **per bruger** og kræver
 **ingen administrator**. Den opretter:
 
 - Start-menu-genvej og valgfri skrivebordsgenvej.
@@ -64,7 +64,9 @@ og valget gemmes i `%APPDATA%\Bladr\language.txt`.
   HUD og bar skjules, når musen står stille, og kommer frem igen, når den flyttes.
 - **Slet billede** med `Del`: en bekræftelsesdialog flytter filen til
   papirkurven og viser derefter det næste billede. På netværksdrev, hvor der
-  ikke er papirkurv, slettes filen permanent efter bekræftelse.
+  ikke er papirkurv, slettes filen permanent efter bekræftelse. Kræver Windows
+  administratorrettigheder, spørger Bladr om UAC og sletter via en midlertidig
+  administrator-hjælper.
 - **Drag & drop** af en fil eller mappe, samt `O` (mappe) og `Ctrl+O` (fil).
 - **Kun én instans:** åbner man et nyt billede fra Stifinder, bruges det
   kørende Bladr-vindue i stedet for at starte en ny kopi.

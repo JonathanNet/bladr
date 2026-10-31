@@ -474,7 +474,15 @@ impl BladrApp {
         // Stop the decoder before deleting so it cannot hold the file open.
         self.decoder = Decoder::spawn();
         std::thread::spawn(move || {
-            let _ = tx.send(delete::to_recycle_bin(&path));
+            let result = delete::to_recycle_bin(&path).or_else(|first| {
+                if !path.exists() {
+                    Ok(())
+                } else {
+                    delete::delete_elevated(&path)
+                        .map_err(|error| format!("{first}; {error}"))
+                }
+            });
+            let _ = tx.send(result);
         });
     }
 

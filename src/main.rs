@@ -21,8 +21,20 @@ use std::path::PathBuf;
 
 use eframe::egui;
 
-fn install_panic_log() {
-    let default_hook = std::panic::take_hook();
+fn run_delete_helper() {
+    let mut args = std::env::args_os().skip(1);
+    while let Some(argument) = args.next() {
+        if argument.to_string_lossy() == "--delete" {
+            if let Some(path) = args.next() {
+                let ok = delete::to_recycle_bin(std::path::Path::new(&path)).is_ok();
+                std::process::exit(if ok { 0 } else { 1 });
+            }
+            std::process::exit(2);
+        }
+    }
+}
+
+fn install_panic_log() {    let default_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         let root = std::env::var_os("APPDATA")
             .map(PathBuf::from)
@@ -48,6 +60,7 @@ fn install_panic_log() {
 }
 
 fn main() -> eframe::Result {
+    run_delete_helper();
     install_panic_log();
     let mut initial: Option<PathBuf> = None;
     let mut start_fullscreen = false;
