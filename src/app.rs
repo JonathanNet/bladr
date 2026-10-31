@@ -155,6 +155,7 @@ impl BladrApp {
         let lang = Lang::initial();
         i18n::set_decoder_lang(lang);
         let settings = settings::load();
+        let start_fullscreen = start_fullscreen || settings.start_fullscreen;
 
         let mut app = Self {
             folder: None,
@@ -1618,6 +1619,21 @@ impl BladrApp {
                                 self.start_update_check();
                             }
                         }
+
+                        if ui
+                            .checkbox(
+                                &mut self.settings.start_fullscreen,
+                                i18n::tr(lang, "options.start_fullscreen"),
+                            )
+                            .changed()
+                        {
+                            settings::save(&self.settings);
+                        }
+                        ui.label(
+                            RichText::new(i18n::tr(lang, "options.start_fullscreen_hint"))
+                                .size(10.5)
+                                .color(Color32::from_gray(125)),
+                        );
 
                         ui.add_space(8.0);
                         let status = match self.update_status {

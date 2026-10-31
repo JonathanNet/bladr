@@ -12,12 +12,12 @@ Bladr er et selvstændigt program og indeholder ingen kode fra ACDSee.
 
 Der er to muligheder under **Releases** på GitHub:
 
-- **`Bladr-0.2.7-Setup.exe`** – installationsprogram til Windows.
+- **`Bladr-0.2.8-Setup.exe`** – installationsprogram til Windows.
 - **`Bladr.exe`** – portabel enkeltfil, som kan kopieres hvor som helst hen.
 
 ### Installation
 
-Kør `Bladr-0.2.7-Setup.exe`. Installationen er **per bruger** og kræver
+Kør `Bladr-0.2.8-Setup.exe`. Installationen er **per bruger** og kræver
 **ingen administrator**. Den opretter:
 
 - Start-menu-genvej og valgfri skrivebordsgenvej.
@@ -65,8 +65,8 @@ og valget gemmes i `%APPDATA%\Bladr\language.txt`.
   med versionsnummer.
 - **Sprog:** følger Windows (dansk/engelsk), skiftes med `Alt+L` eller i
   **Indstillinger** (`F2`), og huskes i `%APPDATA%\Bladr\language.txt`.
-- **Indstillinger** (`F2`) med **auto-opdatering** til/fra, “Tjek nu” og
-  sprogvalg. Fremtidige indstillinger hører til her.
+- **Indstillinger** (`F2`) med **auto-opdatering** til/fra, **start i
+  fuldskærm**, “Tjek nu” og sprogvalg. Fremtidige indstillinger hører til her.
 - **Auto-opdatering:** tjekker GitHub Releases højst hver sjette time, henter
   installationsprogrammet og starter det. Slås fra i Indstillinger; valget
   gemmes i `%APPDATA%\Bladr\settings.txt`.
