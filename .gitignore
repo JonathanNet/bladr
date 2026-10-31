@@ -1,6 +1,7 @@
 # Build output
 /target/
 /dist/
+/installer/Output/
 
 # Internal analysis and private test material
 /rea-acdsee/

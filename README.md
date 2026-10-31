@@ -8,8 +8,24 @@ Bladr er et selvstændigt program og indeholder ingen kode fra ACDSee.
 
 ## Download
 
-Den nyeste Windows-version ligger som **`Bladr.exe`** under **Releases** på
-GitHub. Det er en enkelt selvstændig fil — ingen installation nødvendig.
+Der er to muligheder under **Releases** på GitHub:
+
+- **`Bladr-0.2.4-Setup.exe`** – installationsprogram til Windows.
+- **`Bladr.exe`** – portabel enkeltfil, som kan kopieres hvor som helst hen.
+
+### Installation
+
+Kør `Bladr-0.2.4-Setup.exe`. Installationen er **per bruger** og kræver
+**ingen administrator**. Den opretter:
+
+- Start-menu-genvej og valgfri skrivebordsgenvej.
+- **”Åbn med Bladr”** i højrekliksmenuen på mapper (også UNC/NAS-mapper).
+- Bladr i Windows' **”Åbn med”**-liste uden at ændre standardprogrammer.
+
+Afinstallation sker via **Indstillinger → Apps → Installerede apps → Bladr**.
+
+Filen er ikke codesignet, så Windows SmartScreen kan vise en advarsel første
+gang: vælg **More info → Run anyway**.
 
 ## Sprog / Language
 
@@ -140,6 +156,19 @@ uden filikon. En bestemt compiler kan vælges med miljøvariablen `RC_EXE`.
 Den færdige exe ligger i `target\release\bladr.exe`. Den kan kopieres frit og
 kræver ikke ACDSee eller andre installationer. Windows kan cache gamle ikoner;
 tryk `F5` i Stifinder, hvis det ser forkert ud efter en opdatering.
+
+### Installer
+
+Installationsprogrammet bygges med **Inno Setup 6**:
+
+```powershell
+winget install JRSoftware.InnoSetup
+& "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe" installer\bladr.iss
+```
+
+Resultatet ligger i `installer\Output\Bladr-<version>-Setup.exe`. GitHub
+Actions bygger og uploader både exe'en og installeren automatisk ved et
+versions-tag.
 
 ## Arkitektur
 
