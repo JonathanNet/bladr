@@ -6,9 +6,11 @@
 
 mod app;
 mod decode;
+mod exif;
 mod i18n;
 mod library;
 mod settings;
+mod single_instance;
 mod tiff;
 mod update;
 
@@ -45,6 +47,11 @@ fn main() -> eframe::Result {
         }
     }
 
+    let Some(incoming) = single_instance::acquire() else {
+        single_instance::notify_existing(initial.as_deref());
+        return Ok(());
+    };
+
     let icon = eframe::icon_data::from_png_bytes(include_bytes!("../assets/icon.png")).ok();
 
     let mut viewport = egui::ViewportBuilder::default()
@@ -70,6 +77,7 @@ fn main() -> eframe::Result {
                 cc,
                 initial.take(),
                 start_fullscreen,
+                incoming,
             )))
         }),
     )

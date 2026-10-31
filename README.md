@@ -12,12 +12,12 @@ Bladr is an independent program and contains no code from ACDSee.
 
 There are two options under **Releases** on GitHub:
 
-- **`Bladr-0.2.5-Setup.exe`** — Windows installer.
+- **`Bladr-0.2.6-Setup.exe`** — Windows installer.
 - **`Bladr.exe`** — portable single file that can be copied anywhere.
 
 ### Installation
 
-Run `Bladr-0.2.5-Setup.exe`. It installs **per user** and requires **no
+Run `Bladr-0.2.6-Setup.exe`. It installs **per user** and requires **no
 administrator rights**. It creates:
 
 - A Start-menu shortcut and an optional desktop shortcut.
@@ -33,8 +33,8 @@ choose **More info → Run anyway**.
 ## Language
 
 Bladr starts in the **Windows display language**: Danish on a Danish system,
-English otherwise. Change it with **`Alt+L`** or **right-click → Language**;
-the choice is saved in `%APPDATA%\Bladr\language.txt`.
+English otherwise. Change it with **`Alt+L`** or in **Options** (`F2`); the
+choice is saved in `%APPDATA%\Bladr\language.txt`.
 
 - `BLADR_LANG=en` or `BLADR_LANG=da` forces a language at startup.
 - Add a language as a table in [`src/i18n.rs`](src/i18n.rs); missing keys fall
@@ -54,7 +54,11 @@ the choice is saved in `%APPDATA%\Bladr\language.txt`.
   responsive. The previous image stays on screen until the next one is ready.
 - **HUD** with filename, folder, counter, dimensions, file size and zoom. It
   fades in on activity and disappears after a few seconds.
+- **EXIF overlay** with shutter speed, aperture, ISO, focal length, camera and
+  date. Toggle it with `I`; the HUD stays visible while it is open.
 - **Drag & drop** of a file or folder, plus `O` (folder) and `Ctrl+O` (file).
+- **Single instance:** opening another image from Explorer reuses the running
+  Bladr window instead of starting a second copy.
 - Remembers the last folder in `%APPDATA%\Bladr\last_folder.txt`.
 - Starts **maximised**, and has an **About** dialog (`F1` or the right-click
   menu) showing the version.
@@ -82,7 +86,7 @@ the choice is saved in `%APPDATA%\Bladr\language.txt`.
 | Zoom in / out | `+` / `-`, `Ctrl` + wheel |
 | Pan | Drag with the mouse (when zoomed in) |
 | Slideshow | `Space` |
-| Keep HUD visible | `I` |
+| Show EXIF info / keep HUD | `I` |
 | Switch language (Danish/English) | `Alt+L` |
 | Options | `F2` |
 | About dialog | `F1` or right-click → About Bladr… |

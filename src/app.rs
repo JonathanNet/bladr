@@ -11,6 +11,7 @@ use eframe::egui::{
 };
 
 use crate::decode::{DecodeEvent, Decoder};
+use crate::exif::{self, ExifData};
 use crate::i18n::{self, Lang};
 use crate::library::{self, Photo};
 use crate::settings::{self, Settings};
@@ -125,6 +126,10 @@ pub struct BladrApp {
     update_available: Option<UpdateInfo>,
     update_downloading: bool,
     update_error: Option<String>,
+    incoming: Receiver<PathBuf>,
+    exif_visible: bool,
+    exif_cache: HashMap<usize, Option<ExifData>>,
+    exif_rx: Option<Receiver<(usize, Option<ExifData>)>>,
 }
 
 impl BladrApp {
@@ -132,6 +137,7 @@ impl BladrApp {
         cc: &eframe::CreationContext<'_>,
         initial: Option<PathBuf>,
         start_fullscreen: bool,
+        incoming: Receiver<PathBuf>,
     ) -> Self {
         let mut visuals = egui::Visuals::dark();
         visuals.panel_fill = Color32::BLACK;
@@ -184,6 +190,10 @@ impl BladrApp {
             update_available: None,
             update_downloading: false,
             update_error: None,
+            incoming,
+            exif_visible: false,
+            exif_cache: HashMap::new(),
+            exif_rx: None,
         };
 
         if app.settings.auto_update
@@ -282,6 +292,49 @@ impl BladrApp {
         }
     }
 
+    fn poll_incoming(&mut self, ctx: &egui::Context) {
+        while let Ok(path) = self.incoming.try_recv() {
+            if path.as_os_str().is_empty() {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+                continue;
+            }
+            self.about_open = false;
+            self.options_open = false;
+            self.update_available = None;
+            self.open_path(&path);
+            ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+        }
+    }
+
+    fn request_exif(&mut self) {
+        if !self.exif_visible || self.exif_rx.is_some() {
+            return;
+        }
+        if self.exif_cache.contains_key(&self.index) {
+            return;
+        }
+        let Some(photo) = self.photos.get(self.index) else {
+            return;
+        };
+        let index = self.index;
+        let path = photo.path.clone();
+        let (tx, rx) = mpsc::channel();
+        self.exif_rx = Some(rx);
+        std::thread::spawn(move || {
+            let data = exif::read(&path);
+            let _ = tx.send((index, data));
+        });
+    }
+
+    fn poll_exif(&mut self) {
+        let result = self.exif_rx.as_ref().and_then(|rx| rx.try_recv().ok());
+        if let Some((index, data)) = result {
+            self.exif_rx = None;
+            self.exif_cache.insert(index, data);
+            self.request_exif();
+        }
+    }
+
     fn open_path(&mut self, path: &Path) {        // A network path such as \\server\share often cannot be probed with
         // `is_dir` before the share is authenticated, so treat anything
         // without a file extension (or with a trailing separator) as a folder.
@@ -343,6 +396,8 @@ impl BladrApp {
             .and_then(|p| library::index_of(&self.photos, p))
             .unwrap_or(0);
         self.textures.clear();
+        self.exif_cache.clear();
+        self.exif_rx = None;
         self.failed.clear();
         self.shown = self.index;
         self.has_shown = false;
@@ -402,6 +457,7 @@ impl BladrApp {
         if self.slideshow_next.is_some() {
             self.slideshow_next = Some(now + SLIDESHOW_SECS);
         }
+        self.request_exif();
     }
 
     fn jump_to(&mut self, index: usize, now: f64) {
@@ -416,6 +472,7 @@ impl BladrApp {
         if self.slideshow_next.is_some() {
             self.slideshow_next = Some(now + SLIDESHOW_SECS);
         }
+        self.request_exif();
     }
 
     fn toggle_fullscreen(&mut self, ctx: &egui::Context, now: f64) {
@@ -718,7 +775,11 @@ impl BladrApp {
         }
 
         if snap.info {
-            self.hud_pinned = !self.hud_pinned;
+            self.exif_visible = !self.exif_visible;
+            self.hud_pinned = self.exif_visible;
+            if self.exif_visible {
+                self.request_exif();
+            }
             self.last_activity = now;
         }
 
@@ -921,14 +982,6 @@ impl BladrApp {
                                 ui.close_menu();
                             }
                             ui.separator();
-                            ui.menu_button(i18n::tr(lang, "menu.language"), |ui| {
-                                for choice in Lang::ALL {
-                                    if ui.radio(self.lang == choice, choice.label()).clicked() {
-                                        self.set_language(choice);
-                                        ui.close_menu();
-                                    }
-                                }
-                            });
                             if ui.button(i18n::tr(lang, "menu.options")).clicked() {
                                 self.options_open = true;
                                 self.about_open = false;
@@ -1057,6 +1110,34 @@ impl BladrApp {
                             .size(12.0)
                             .color(muted(alpha * 0.95)),
                         );
+                        if self.exif_visible {
+                            ui.add_space(5.0);
+                            match self.exif_cache.get(&self.index) {
+                                Some(Some(data)) => {
+                                    for line in data.lines() {
+                                        ui.label(
+                                            RichText::new(line)
+                                                .size(11.5)
+                                                .color(muted(alpha * 0.88)),
+                                        );
+                                    }
+                                }
+                                Some(None) => {
+                                    ui.label(
+                                        RichText::new(i18n::tr(lang, "exif.none"))
+                                            .size(11.0)
+                                            .color(muted(alpha * 0.75)),
+                                    );
+                                }
+                                None => {
+                                    ui.label(
+                                        RichText::new(i18n::tr(lang, "exif.loading"))
+                                            .size(11.0)
+                                            .color(muted(alpha * 0.75)),
+                                    );
+                                }
+                            }
+                        }
                     });
             });
 
@@ -1865,6 +1946,8 @@ impl eframe::App for BladrApp {
         self.poll_scan(snap.time);
         self.poll_decoder(ctx, snap.time);
         self.poll_update();
+        self.poll_exif();
+        self.poll_incoming(ctx);
         self.handle_input(ctx, rect, &snap);
         self.prefetch();
         self.draw(ctx, &snap);

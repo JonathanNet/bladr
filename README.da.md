@@ -12,12 +12,12 @@ Bladr er et selvstændigt program og indeholder ingen kode fra ACDSee.
 
 Der er to muligheder under **Releases** på GitHub:
 
-- **`Bladr-0.2.5-Setup.exe`** – installationsprogram til Windows.
+- **`Bladr-0.2.6-Setup.exe`** – installationsprogram til Windows.
 - **`Bladr.exe`** – portabel enkeltfil, som kan kopieres hvor som helst hen.
 
 ### Installation
 
-Kør `Bladr-0.2.5-Setup.exe`. Installationen er **per bruger** og kræver
+Kør `Bladr-0.2.6-Setup.exe`. Installationen er **per bruger** og kræver
 **ingen administrator**. Den opretter:
 
 - Start-menu-genvej og valgfri skrivebordsgenvej.
@@ -53,12 +53,16 @@ og valget gemmes i `%APPDATA%\Bladr\language.txt`.
   Det forrige billede bliver stående, indtil det næste er dekodet.
 - **HUD** med filnavn, mappe, tæller, dimensioner, filstørrelse og zoom – den
   toner frem ved aktivitet og forsvinder efter et par sekunder.
+- **EXIF-overlay** med lukketid, blænde, ISO, brændvidde, kamera og dato.
+  Slås til/fra med `I`; HUD'en bliver stående, mens den vises.
 - **Drag & drop** af en fil eller mappe, samt `O` (mappe) og `Ctrl+O` (fil).
+- **Kun én instans:** åbner man et nyt billede fra Stifinder, bruges det
+  kørende Bladr-vindue i stedet for at starte en ny kopi.
 - Husker sidste mappe i `%APPDATA%\Bladr\last_folder.txt`.
 - Starter **maksimeret**, og har en **Om-dialog** (`F1` eller højrekliksmenuen)
   med versionsnummer.
-- **Sprog:** følger Windows (dansk/engelsk), skiftes med `Alt+L` eller
-  højreklik → Sprog, og huskes i `%APPDATA%\Bladr\language.txt`.
+- **Sprog:** følger Windows (dansk/engelsk), skiftes med `Alt+L` eller i
+  **Indstillinger** (`F2`), og huskes i `%APPDATA%\Bladr\language.txt`.
 - **Indstillinger** (`F2`) med **auto-opdatering** til/fra, “Tjek nu” og
   sprogvalg. Fremtidige indstillinger hører til her.
 - **Auto-opdatering:** tjekker GitHub Releases højst hver sjette time, henter
@@ -83,7 +87,7 @@ og valget gemmes i `%APPDATA%\Bladr\language.txt`.
 | Zoom ind / ud | `+` / `-`, `Ctrl` + rul |
 | Panorér | Træk med musen (når zoomet ind) |
 | Auto-afspilning | `Mellemrum` |
-| Vis/skjul HUD permanent | `I` |
+| Vis EXIF / hold HUD | `I` |
 | Skift sprog (dansk/engelsk) | `Alt+L` |
 | Indstillinger (opdatering, sprog) | `F2` |
 | Om-dialog | `F1` eller højreklik → Om Bladr… |
