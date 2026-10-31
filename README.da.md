@@ -12,12 +12,12 @@ Bladr er et selvstændigt program og indeholder ingen kode fra ACDSee.
 
 Der er to muligheder under **Releases** på GitHub:
 
-- **`Bladr-0.2.8-Setup.exe`** – installationsprogram til Windows.
+- **`Bladr-0.2.9-Setup.exe`** – installationsprogram til Windows.
 - **`Bladr.exe`** – portabel enkeltfil, som kan kopieres hvor som helst hen.
 
 ### Installation
 
-Kør `Bladr-0.2.8-Setup.exe`. Installationen er **per bruger** og kræver
+Kør `Bladr-0.2.9-Setup.exe`. Installationen er **per bruger** og kræver
 **ingen administrator**. Den opretter:
 
 - Start-menu-genvej og valgfri skrivebordsgenvej.

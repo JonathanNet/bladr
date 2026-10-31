@@ -12,12 +12,12 @@ Bladr is an independent program and contains no code from ACDSee.
 
 There are two options under **Releases** on GitHub:
 
-- **`Bladr-0.2.8-Setup.exe`** — Windows installer.
+- **`Bladr-0.2.9-Setup.exe`** — Windows installer.
 - **`Bladr.exe`** — portable single file that can be copied anywhere.
 
 ### Installation
 
-Run `Bladr-0.2.8-Setup.exe`. It installs **per user** and requires **no
+Run `Bladr-0.2.9-Setup.exe`. It installs **per user** and requires **no
 administrator rights**. It creates:
 
 - A Start-menu shortcut and an optional desktop shortcut.

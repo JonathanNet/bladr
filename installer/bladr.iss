@@ -4,7 +4,7 @@
 
 #define MyAppName "Bladr"
 #ifndef MyAppVersion
-  #define MyAppVersion "0.2.8"
+  #define MyAppVersion "0.2.9"
 #endif
 #define MyAppPublisher "Bladr"
 #define MyAppExeName "Bladr.exe"
@@ -129,4 +129,4 @@ Root: HKCU; Subkey: "Software\Classes\Applications\Bladr.exe\SupportedTypes"; Va
 Root: HKCU; Subkey: "Software\Classes\Applications\Bladr.exe\SupportedTypes"; ValueType: string; ValueName: ".dcr"; ValueData: ""
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,Bladr}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,Bladr}"; Flags: nowait postinstall skipifsilent runasoriginaluser

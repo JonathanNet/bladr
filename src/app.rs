@@ -124,6 +124,7 @@ pub struct BladrApp {
     about_open: bool,
     options_open: bool,
     settings: Settings,
+    settings_error: Option<String>,
     update_check: Option<Receiver<Result<Option<UpdateInfo>, String>>>,
     update_download: Option<Receiver<Result<PathBuf, String>>>,
     update_status: UpdateStatus,
@@ -192,6 +193,7 @@ impl BladrApp {
             about_open: false,
             options_open: false,
             settings,
+            settings_error: None,
             update_check: None,
             update_download: None,
             update_status: UpdateStatus::Idle,
@@ -244,7 +246,7 @@ impl BladrApp {
         self.update_status = UpdateStatus::Checking;
         self.update_error = None;
         self.settings.last_check = settings::now_unix();
-        settings::save(&self.settings);
+        self.persist_settings();
         std::thread::spawn(move || {
             let _ = tx.send(update::check(env!("CARGO_PKG_VERSION")));
         });
@@ -343,6 +345,13 @@ impl BladrApp {
             self.exif_rx = None;
             self.exif_cache.insert(index, data);
             self.request_exif();
+        }
+    }
+
+    fn persist_settings(&mut self) {
+        match settings::save(&self.settings) {
+            Ok(()) => self.settings_error = None,
+            Err(error) => self.settings_error = Some(error),
         }
     }
 
@@ -1404,8 +1413,13 @@ impl BladrApp {
                         .show(ui, |ui| {
                             ui.set_min_width(w - 28.0);
                             ui.vertical_centered(|ui| {
+                                let hint_key = if self.fullscreen {
+                                    "overlay.hint_fullscreen"
+                                } else {
+                                    "overlay.hint"
+                                };
                                 ui.label(
-                                    RichText::new(i18n::tr(lang, "overlay.hint"))
+                                    RichText::new(i18n::tr(lang, hint_key))
                                     .size(12.0)
                                     .color(Color32::from_rgba_unmultiplied(
                                         210,
@@ -1614,7 +1628,7 @@ impl BladrApp {
                             )
                             .changed();
                         if changed {
-                            settings::save(&self.settings);
+                            self.persist_settings();
                             if self.settings.auto_update && self.update_check.is_none() {
                                 self.start_update_check();
                             }
@@ -1627,13 +1641,24 @@ impl BladrApp {
                             )
                             .changed()
                         {
-                            settings::save(&self.settings);
+                            self.persist_settings();
                         }
                         ui.label(
                             RichText::new(i18n::tr(lang, "options.start_fullscreen_hint"))
                                 .size(10.5)
                                 .color(Color32::from_gray(125)),
                         );
+                        if let Some(error) = &self.settings_error {
+                            ui.label(
+                                RichText::new(i18n::tf(
+                                    lang,
+                                    "options.save_failed",
+                                    &[("e", error)],
+                                ))
+                                .size(10.5)
+                                .color(Color32::from_rgb(235, 120, 100)),
+                            );
+                        }
 
                         ui.add_space(8.0);
                         let status = match self.update_status {
@@ -1708,6 +1733,7 @@ impl BladrApp {
                             )
                             .clicked()
                         {
+                            self.persist_settings();
                             close = true;
                         }
                     });
@@ -2107,6 +2133,10 @@ impl BladrApp {
 }
 
 impl eframe::App for BladrApp {
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        let _ = settings::save(&self.settings);
+    }
+
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         let snap = self.snapshot(ctx);
         let rect = ctx.screen_rect();
