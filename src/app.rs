@@ -1915,10 +1915,15 @@ impl BladrApp {
                                 .color(Color32::WHITE),
                         );
                         ui.add_space(10.0);
+                        let warning_key = if delete::is_network(&path) {
+                            "delete.warning_network"
+                        } else {
+                            "delete.warning"
+                        };
                         ui.label(
                             RichText::new(i18n::tf(
                                 lang,
-                                "delete.warning",
+                                warning_key,
                                 &[("name", &name)],
                             ))
                             .size(13.0)

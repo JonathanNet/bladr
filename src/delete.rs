@@ -22,12 +22,42 @@ struct FileOp {
     progress_title: *const u16,
 }
 
+pub fn is_network(path: &Path) -> bool {
+    let text = path.to_string_lossy();
+    if text.starts_with(r"\\") && !text.starts_with(r"\\?\") {
+        return true;
+    }
+    if text.starts_with(r"\\?\UNC\") {
+        return true;
+    }
+    if let Some(drive) = text.chars().next() {
+        if drive.is_ascii_alphabetic() && text.as_bytes().get(1) == Some(&b':') {
+            return drive_type(drive) == 4; // DRIVE_REMOTE
+        }
+    }
+    false
+}
+
+fn drive_type(drive: char) -> u32 {
+    let root = format!("{drive}:\\");
+    let wide: Vec<u16> = root.encode_utf16().chain(std::iter::once(0)).collect();
+    unsafe { GetDriveTypeW(wide.as_ptr()) }
+}
+
 pub fn to_recycle_bin(path: &Path) -> Result<(), String> {
+    let network = is_network(path);
     let path = path
         .canonicalize()
         .map_err(|error| format!("delete path: {error}"))?;
     if !path.is_file() {
         return Err("file no longer exists".to_owned());
+    }
+
+    // Network shares do not have a Recycle Bin; Explorer deletes there
+    // permanently, so do the same after the confirmation dialog.
+    if network {
+        return std::fs::remove_file(&path)
+            .map_err(|error| format!("delete network file: {error}"));
     }
 
     let mut text = path.display().to_string();
@@ -58,11 +88,24 @@ pub fn to_recycle_bin(path: &Path) -> Result<(), String> {
     } else if operation.aborted != 0 {
         Err("delete was cancelled".to_owned())
     } else {
-        Err(format!("Windows could not delete the file ({code})"))
+        // Some filesystems/long paths do not support the shell recycle
+        // operation (ERROR_CALL_NOT_IMPLEMENTED = 120). Fall back to a
+        // normal delete rather than leaving the user stuck.
+        match std::fs::remove_file(&path) {
+            Ok(()) => Ok(()),
+            Err(error) => Err(format!(
+                "Windows could not delete the file ({code}); {error}"
+            )),
+        }
     }
 }
 
 #[link(name = "shell32")]
 extern "system" {
     fn SHFileOperationW(operation: *mut FileOp) -> i32;
+}
+
+#[link(name = "kernel32")]
+extern "system" {
+    fn GetDriveTypeW(root: *const u16) -> u32;
 }
