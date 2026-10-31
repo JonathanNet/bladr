@@ -2,6 +2,7 @@
 /target/
 /dist/
 /installer/Output/
+/installer/launcher/target/
 
 # Internal analysis and private test material
 /rea-acdsee/

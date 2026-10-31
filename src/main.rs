@@ -8,7 +8,9 @@ mod app;
 mod decode;
 mod i18n;
 mod library;
+mod settings;
 mod tiff;
+mod update;
 
 use std::path::PathBuf;
 

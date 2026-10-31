@@ -1,0 +1,11 @@
+[package]
+name = "bladr-setup-launcher"
+version = "0.2.5"
+edition = "2021"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

@@ -13,6 +13,8 @@ use eframe::egui::{
 use crate::decode::{DecodeEvent, Decoder};
 use crate::i18n::{self, Lang};
 use crate::library::{self, Photo};
+use crate::settings::{self, Settings};
+use crate::update::{self, UpdateInfo};
 
 const HUD_IDLE_SECS: f64 = 2.6;
 const HINT_SECS: f64 = 9.0;
@@ -58,6 +60,7 @@ struct Snapshot {
     open_file: bool,
     open_path_prompt: bool,
     about: bool,
+    options: bool,
     toggle_language: bool,
     dropped: Vec<PathBuf>,
     hovered_files: bool,
@@ -65,6 +68,14 @@ struct Snapshot {
     mouse_moved: bool,
     time: f64,
     focused: bool,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum UpdateStatus {
+    Idle,
+    Checking,
+    UpToDate,
+    Failed,
 }
 
 pub struct BladrApp {
@@ -106,6 +117,14 @@ pub struct BladrApp {
     path_prompt_error: String,
     path_prompt_focus: bool,
     about_open: bool,
+    options_open: bool,
+    settings: Settings,
+    update_check: Option<Receiver<Result<Option<UpdateInfo>, String>>>,
+    update_download: Option<Receiver<Result<PathBuf, String>>>,
+    update_status: UpdateStatus,
+    update_available: Option<UpdateInfo>,
+    update_downloading: bool,
+    update_error: Option<String>,
 }
 
 impl BladrApp {
@@ -122,6 +141,7 @@ impl BladrApp {
 
         let lang = Lang::initial();
         i18n::set_decoder_lang(lang);
+        let settings = settings::load();
 
         let mut app = Self {
             folder: None,
@@ -156,7 +176,21 @@ impl BladrApp {
             path_prompt_error: String::new(),
             path_prompt_focus: false,
             about_open: false,
+            options_open: false,
+            settings,
+            update_check: None,
+            update_download: None,
+            update_status: UpdateStatus::Idle,
+            update_available: None,
+            update_downloading: false,
+            update_error: None,
         };
+
+        if app.settings.auto_update
+            && settings::now_unix().saturating_sub(app.settings.last_check) > 6 * 3600
+        {
+            app.start_update_check();
+        }
 
         match initial {
             Some(path) => app.open_path(&path),
@@ -178,6 +212,74 @@ impl BladrApp {
         i18n::set_decoder_lang(lang);
         i18n::save(lang);
         self.error = None;
+    }
+
+    fn start_update_check(&mut self) {
+        if self.update_check.is_some() {
+            return;
+        }
+        let (tx, rx) = mpsc::channel();
+        self.update_check = Some(rx);
+        self.update_status = UpdateStatus::Checking;
+        self.update_error = None;
+        self.settings.last_check = settings::now_unix();
+        settings::save(&self.settings);
+        std::thread::spawn(move || {
+            let _ = tx.send(update::check(env!("CARGO_PKG_VERSION")));
+        });
+    }
+
+    fn start_update_download(&mut self) {
+        let Some(info) = self.update_available.clone() else {
+            return;
+        };
+        if self.update_download.is_some() {
+            return;
+        }
+        let (tx, rx) = mpsc::channel();
+        self.update_download = Some(rx);
+        self.update_downloading = true;
+        self.update_error = None;
+        std::thread::spawn(move || {
+            let _ = tx.send(update::download(&info));
+        });
+    }
+
+    fn poll_update(&mut self) {
+        let check = self
+            .update_check
+            .as_ref()
+            .and_then(|rx| rx.try_recv().ok());
+        if let Some(result) = check {
+            self.update_check = None;
+            match result {
+                Ok(Some(info)) => {
+                    self.update_status = UpdateStatus::Idle;
+                    self.update_available = Some(info);
+                }
+                Ok(None) => self.update_status = UpdateStatus::UpToDate,
+                Err(error) => {
+                    self.update_status = UpdateStatus::Failed;
+                    self.update_error = Some(error);
+                }
+            }
+        }
+
+        let download = self
+            .update_download
+            .as_ref()
+            .and_then(|rx| rx.try_recv().ok());
+        if let Some(result) = download {
+            self.update_download = None;
+            self.update_downloading = false;
+            match result {
+                Ok(path) => match update::run_installer(&path) {
+                    Ok(()) => std::process::exit(0),
+                    Err(error) => self.update_error = Some(error),
+                },
+                Err(error) => self.update_error = Some(error),
+            }
+        }
     }
 
     fn open_path(&mut self, path: &Path) {        // A network path such as \\server\share often cannot be probed with
@@ -486,6 +588,7 @@ impl BladrApp {
             open_file: i.key_pressed(Key::O) && (i.modifiers.ctrl || i.modifiers.command),
             open_path_prompt: i.key_pressed(Key::L) && (i.modifiers.ctrl || i.modifiers.command),
             about: i.key_pressed(Key::F1),
+            options: i.key_pressed(Key::F2),
             toggle_language: i.key_pressed(Key::L) && i.modifiers.alt,
             dropped: i
                 .raw
@@ -506,6 +609,26 @@ impl BladrApp {
 
         // While the path prompt is open, its own text field owns the keyboard.
         if self.path_prompt.is_some() {
+            return;
+        }
+
+        if self.update_available.is_some() {
+            if snap.escape {
+                self.update_available = None;
+            }
+            return;
+        }
+
+        if self.options_open {
+            if snap.escape || snap.options {
+                self.options_open = false;
+            }
+            return;
+        }
+
+        if snap.options {
+            self.options_open = true;
+            self.about_open = false;
             return;
         }
 
@@ -806,6 +929,11 @@ impl BladrApp {
                                     }
                                 }
                             });
+                            if ui.button(i18n::tr(lang, "menu.options")).clicked() {
+                                self.options_open = true;
+                                self.about_open = false;
+                                ui.close_menu();
+                            }
                             if ui.button(i18n::tr(lang, "menu.about")).clicked() {
                                 self.about_open = true;
                                 ui.close_menu();
@@ -1117,6 +1245,8 @@ impl BladrApp {
         }
 
         self.draw_about(ctx);
+        self.draw_options(ctx);
+        self.draw_update(ctx);
         self.draw_path_prompt(ctx);
     }
 
@@ -1193,6 +1323,252 @@ impl BladrApp {
 
         if close {
             self.about_open = false;
+        }
+    }
+
+    fn draw_options(&mut self, ctx: &egui::Context) {
+        if !self.options_open {
+            return;
+        }
+
+        let lang = self.lang;
+        let w = 480.0;
+        let screen = ctx.screen_rect();
+        let mut close = false;
+        let mut check_now = false;
+        let mut next_lang = None;
+
+        egui::Area::new(Id::new("options"))
+            .order(egui::Order::Tooltip)
+            .fixed_pos(Pos2::new(
+                screen.center().x - w * 0.5,
+                screen.center().y - 190.0,
+            ))
+            .show(ctx, |ui| {
+                ui.set_width(w);
+                egui::Frame::NONE
+                    .fill(Color32::from_rgba_unmultiplied(22, 24, 30, 252))
+                    .corner_radius(CornerRadius::same(16))
+                    .inner_margin(Margin::same(26))
+                    .show(ui, |ui| {
+                        ui.set_min_width(w - 52.0);
+                        ui.label(
+                            RichText::new(i18n::tr(lang, "options.title"))
+                                .size(24.0)
+                                .strong(),
+                        );
+                        ui.add_space(4.0);
+                        ui.label(
+                            RichText::new(i18n::tf(
+                                lang,
+                                "options.version",
+                                &[("version", env!("CARGO_PKG_VERSION"))],
+                            ))
+                            .size(12.0)
+                            .color(Color32::from_gray(150)),
+                        );
+                        ui.add_space(16.0);
+
+                        let changed = ui
+                            .checkbox(
+                                &mut self.settings.auto_update,
+                                i18n::tr(lang, "options.auto_update"),
+                            )
+                            .changed();
+                        if changed {
+                            settings::save(&self.settings);
+                            if self.settings.auto_update && self.update_check.is_none() {
+                                self.start_update_check();
+                            }
+                        }
+
+                        ui.add_space(8.0);
+                        let status = match self.update_status {
+                            UpdateStatus::Checking => {
+                                Some(i18n::tr(lang, "options.checking").to_owned())
+                            }
+                            UpdateStatus::UpToDate => {
+                                Some(i18n::tr(lang, "options.up_to_date").to_owned())
+                            }
+                            UpdateStatus::Failed => {
+                                Some(i18n::tr(lang, "options.failed").to_owned())
+                            }
+                            UpdateStatus::Idle => None,
+                        };
+                        if let Some(status) = status {
+                            ui.label(
+                                RichText::new(status)
+                                    .size(11.0)
+                                    .color(Color32::from_gray(155)),
+                            );
+                        } else if let Some(info) = &self.update_available {
+                            ui.label(
+                                RichText::new(i18n::tf(
+                                    lang,
+                                    "update.body",
+                                    &[
+                                        ("new", &info.version),
+                                        ("current", env!("CARGO_PKG_VERSION")),
+                                    ],
+                                ))
+                                .size(11.0)
+                                .color(Color32::from_rgb(120, 190, 255)),
+                            );
+                        }
+
+                        ui.add_space(10.0);
+                        if ui
+                            .add_enabled(
+                                self.update_status != UpdateStatus::Checking,
+                                egui::Button::new(i18n::tr(lang, "options.check_now")),
+                            )
+                            .clicked()
+                        {
+                            check_now = true;
+                        }
+
+                        ui.add_space(16.0);
+                        ui.separator();
+                        ui.add_space(8.0);
+                        ui.label(
+                            RichText::new(i18n::tr(lang, "options.language"))
+                                .size(12.0)
+                                .color(Color32::from_gray(160)),
+                        );
+                        for choice in Lang::ALL {
+                            if ui
+                                .radio(self.lang == choice, choice.label())
+                                .clicked()
+                            {
+                                next_lang = Some(choice);
+                            }
+                        }
+
+                        ui.add_space(18.0);
+                        if ui
+                            .add(
+                                egui::Button::new(
+                                    RichText::new(i18n::tr(lang, "options.close")).size(14.0),
+                                )
+                                .min_size(Vec2::new(120.0, 34.0))
+                                .corner_radius(CornerRadius::same(8)),
+                            )
+                            .clicked()
+                        {
+                            close = true;
+                        }
+                    });
+            });
+
+        if let Some(choice) = next_lang {
+            self.set_language(choice);
+        }
+        if check_now {
+            self.start_update_check();
+        }
+        if close {
+            self.options_open = false;
+        }
+    }
+
+    fn draw_update(&mut self, ctx: &egui::Context) {
+        let Some(info) = self.update_available.clone() else {
+            return;
+        };
+
+        let lang = self.lang;
+        let w = 460.0;
+        let screen = ctx.screen_rect();
+        let mut install = false;
+        let mut later = false;
+
+        egui::Area::new(Id::new("update"))
+            .order(egui::Order::Tooltip)
+            .fixed_pos(Pos2::new(
+                screen.center().x - w * 0.5,
+                screen.center().y - 120.0,
+            ))
+            .show(ctx, |ui| {
+                ui.set_width(w);
+                egui::Frame::NONE
+                    .fill(Color32::from_rgba_unmultiplied(22, 24, 30, 252))
+                    .corner_radius(CornerRadius::same(16))
+                    .inner_margin(Margin::same(24))
+                    .show(ui, |ui| {
+                        ui.set_min_width(w - 48.0);
+                        ui.label(
+                            RichText::new(i18n::tr(lang, "update.title"))
+                                .size(22.0)
+                                .strong(),
+                        );
+                        ui.add_space(8.0);
+                        ui.label(
+                            RichText::new(i18n::tf(
+                                lang,
+                                "update.body",
+                                &[
+                                    ("new", &info.version),
+                                    ("current", env!("CARGO_PKG_VERSION")),
+                                ],
+                            ))
+                            .size(13.0)
+                            .color(Color32::from_gray(180)),
+                        );
+                        ui.add_space(14.0);
+
+                        if self.update_downloading {
+                            ui.horizontal(|ui| {
+                                ui.add(egui::Spinner::new().size(14.0));
+                                ui.label(
+                                    RichText::new(i18n::tr(lang, "update.downloading"))
+                                        .size(12.0)
+                                        .color(Color32::from_gray(170)),
+                                );
+                            });
+                        } else {
+                            if let Some(error) = &self.update_error {
+                                ui.label(
+                                    RichText::new(shorten(error, 160))
+                                        .size(11.0)
+                                        .color(Color32::from_rgb(255, 160, 160)),
+                                );
+                                ui.add_space(8.0);
+                            }
+                            ui.horizontal(|ui| {
+                                if ui
+                                    .add(
+                                        egui::Button::new(
+                                            RichText::new(i18n::tr(lang, "update.download"))
+                                                .size(13.0),
+                                        )
+                                        .corner_radius(CornerRadius::same(8)),
+                                    )
+                                    .clicked()
+                                {
+                                    install = true;
+                                }
+                                if ui
+                                    .add(
+                                        egui::Button::new(
+                                            RichText::new(i18n::tr(lang, "update.later"))
+                                                .size(13.0),
+                                        )
+                                        .corner_radius(CornerRadius::same(8)),
+                                    )
+                                    .clicked()
+                                {
+                                    later = true;
+                                }
+                            });
+                        }
+                    });
+            });
+
+        if install {
+            self.start_update_download();
+        }
+        if later {
+            self.update_available = None;
         }
     }
 
@@ -1488,6 +1864,7 @@ impl eframe::App for BladrApp {
 
         self.poll_scan(snap.time);
         self.poll_decoder(ctx, snap.time);
+        self.poll_update();
         self.handle_input(ctx, rect, &snap);
         self.prefetch();
         self.draw(ctx, &snap);

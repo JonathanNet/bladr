@@ -17,7 +17,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Rust version
+        run: rustc --version && cargo --version
 
       - uses: Swatinem/rust-cache@v2
 
@@ -36,6 +37,9 @@ jobs:
           $iscc = Get-ChildItem "C:\Program Files (x86)\Inno Setup 6\ISCC.exe", "C:\Program Files\Inno Setup 6\ISCC.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
           if (-not $iscc) { throw "Inno Setup compiler not found" }
           & $iscc.FullName "/DMyAppVersion=$version" "installer\bladr.iss"
+          cargo build --release --locked --manifest-path installer\launcher\Cargo.toml
+          Copy-Item installer\launcher\target\release\bladr-setup-launcher.exe "installer\Output\Bladr-$version-Setup.exe"
+          Remove-Item "installer\Output\*-Setup-inner.exe"
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
@@ -43,7 +47,7 @@ jobs:
           name: Bladr-windows-x64
           path: |
             Bladr.exe
-            installer/Output/*.exe
+            installer/Output/Bladr-*-Setup.exe
           if-no-files-found: error
 
       - name: Publish GitHub release
@@ -52,5 +56,5 @@ jobs:
         with:
           files: |
             Bladr.exe
-            installer/Output/*.exe
+            installer/Output/Bladr-*-Setup.exe
           generate_release_notes: true
