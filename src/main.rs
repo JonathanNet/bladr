@@ -20,7 +20,34 @@ use std::path::PathBuf;
 
 use eframe::egui;
 
+fn install_panic_log() {
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let root = std::env::var_os("APPDATA")
+            .map(PathBuf::from)
+            .or_else(|| std::env::current_exe().ok()?.parent().map(PathBuf::from));
+        if let Some(root) = root {
+            let dir = root.join("Bladr");
+            let _ = std::fs::create_dir_all(&dir);
+            if let Ok(mut file) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(dir.join("crash.log"))
+            {
+                use std::io::Write;
+                let stamp = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|value| value.as_secs())
+                    .unwrap_or(0);
+                let _ = writeln!(file, "--- {stamp} ---\n{info}");
+            }
+        }
+        default_hook(info);
+    }));
+}
+
 fn main() -> eframe::Result {
+    install_panic_log();
     let mut initial: Option<PathBuf> = None;
     let mut start_fullscreen = false;
     let lang = i18n::Lang::initial();

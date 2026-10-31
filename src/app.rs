@@ -934,7 +934,18 @@ impl BladrApp {
         if self.slideshow_active && !self.slideshow_paused {
             if let Some(next) = self.slideshow_next {
                 if now >= next {
-                    self.advance_slideshow(now);
+                    let advanced = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        self.advance_slideshow(now);
+                    }));
+                    if advanced.is_err() {
+                        self.slideshow_active = false;
+                        self.slideshow_paused = false;
+                        self.slideshow_next = None;
+                        self.error = Some((
+                            i18n::tr(self.lang, "slideshow.error").to_owned(),
+                            now + 14.0,
+                        ));
+                    }
                 }
             }
         }
@@ -944,6 +955,10 @@ impl BladrApp {
         if !self.slideshow_active || self.slideshow_paused || self.photos.is_empty() {
             return;
         }
+
+        // Moving to the next slide is not user activity: keep the HUD and
+        // slideshow bar hidden while the mouse is still.
+        let activity = self.last_activity;
 
         if self.slideshow_shuffle && self.photos.len() > 1 {
             let seed = (now.to_bits() as usize) ^ (self.index.wrapping_mul(2654435761));
@@ -962,6 +977,7 @@ impl BladrApp {
             return;
         }
 
+        self.last_activity = activity;
         if self.slideshow_active && !self.slideshow_paused {
             self.slideshow_next = Some(now + self.slideshow_delay);
         }
@@ -1342,9 +1358,7 @@ impl BladrApp {
             return;
         }
         let lang = self.lang;
-        let active = self.hud_pinned
-            || snap.time - self.last_activity < HUD_IDLE_SECS
-            || self.slideshow_active;
+        let active = self.hud_pinned || snap.time - self.last_activity < HUD_IDLE_SECS;
         let alpha = ctx.animate_bool_with_time(Id::new("hud-alpha"), active, 0.28);
         self.hud_alpha = alpha;
         if alpha < 0.02 {
@@ -1588,7 +1602,15 @@ impl BladrApp {
         }
 
         self.draw_scan_overlay(ctx, snap);
-        self.draw_slideshow_bar(ctx, now);
+        let slideshow_bar = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            self.draw_slideshow_bar(ctx, now);
+        }));
+        if slideshow_bar.is_err() {
+            self.slideshow_active = false;
+            self.slideshow_paused = false;
+            self.slideshow_next = None;
+            self.error = Some((i18n::tr(self.lang, "slideshow.error").to_owned(), now + 14.0));
+        }
 
         if let Some((message, at)) = &self.error {
             if now < *at {
@@ -1624,7 +1646,7 @@ impl BladrApp {
     }
 
     fn draw_slideshow_bar(&mut self, ctx: &egui::Context, now: f64) {
-        if !self.slideshow_active {
+        if !self.slideshow_active || now - self.last_activity >= HUD_IDLE_SECS {
             return;
         }
 
