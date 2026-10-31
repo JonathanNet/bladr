@@ -159,7 +159,7 @@ fn worker(jobs: Receiver<Job>, events: Sender<DecodeEvent>, shared: Arc<Mutex<Sh
     }
 }
 
-fn decode(path: &Path, lang: Lang) -> Result<Decoded, String> {
+pub(crate) fn decode(path: &Path, lang: Lang) -> Result<Decoded, String> {
     let extension = path
         .extension()
         .and_then(|e| e.to_str())

@@ -12,12 +12,12 @@ Bladr er et selvstændigt program og indeholder ingen kode fra ACDSee.
 
 Der er to muligheder under **Releases** på GitHub:
 
-- **`Bladr-0.2.9-Setup.exe`** – installationsprogram til Windows.
+- **`Bladr-0.3.0-Setup.exe`** – installationsprogram til Windows.
 - **`Bladr.exe`** – portabel enkeltfil, som kan kopieres hvor som helst hen.
 
 ### Installation
 
-Kør `Bladr-0.2.9-Setup.exe`. Installationen er **per bruger** og kræver
+Kør `Bladr-0.3.0-Setup.exe`. Installationen er **per bruger** og kræver
 **ingen administrator**. Den opretter:
 
 - Start-menu-genvej og valgfri skrivebordsgenvej.
@@ -57,6 +57,10 @@ og valget gemmes i `%APPDATA%\Bladr\language.txt`.
   Slås til/fra med `I`; HUD'en bliver stående, mens den vises.
 - **Fokuspunkter** for Canon CR3: **højreklik → Vis fokuspunkter**. Læser
   Canons AFInfo2-record og tegner det valgte AF-område oven på billedet.
+- **Sæt som baggrund** med Centreret, Flise, Strakt og Gendan. RAW-filer
+  konverteres til en midlertidig PNG, før Windows bruger dem.
+- **Slideshow-bar** med forsinkelse, forrige/næste, pause/afspil, gentag og
+  tilfældig rækkefølge. Start med `Mellemrum`; afslut med **Afslut** på baren.
 - **Drag & drop** af en fil eller mappe, samt `O` (mappe) og `Ctrl+O` (fil).
 - **Kun én instans:** åbner man et nyt billede fra Stifinder, bruges det
   kørende Bladr-vindue i stedet for at starte en ny kopi.
@@ -89,6 +93,8 @@ og valget gemmes i `%APPDATA%\Bladr\language.txt`.
 | Zoom ind / ud | `+` / `-`, `Ctrl` + rul |
 | Panorér | Træk med musen (når zoomet ind) |
 | Auto-afspilning | `Mellemrum` |
+| Slideshow-forsinkelse / gentag / tilfældig | Knapperne på slideshow-baren |
+| Sæt som baggrund | Højreklik → Sæt som baggrund |
 | Vis EXIF / hold HUD | `I` |
 | Vis/skjul fokuspunkter | Højreklik → Vis fokuspunkter, `F3` |
 | Skift sprog (dansk/engelsk) | `Alt+L` |

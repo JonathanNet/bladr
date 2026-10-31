@@ -14,13 +14,14 @@ use crate::decode::{DecodeEvent, Decoder};
 use crate::exif::{self, ExifData};
 use crate::focus::{self, FocusData};
 use crate::i18n::{self, Lang};
+use crate::wallpaper::{self, Style as WallpaperStyle};
 use crate::library::{self, Photo};
 use crate::settings::{self, Settings};
 use crate::update::{self, UpdateInfo};
 
 const HUD_IDLE_SECS: f64 = 2.6;
 const HINT_SECS: f64 = 9.0;
-const SLIDESHOW_SECS: f64 = 3.2;
+const SLIDESHOW_SECS: f64 = 5.0;
 const MAX_CACHE: usize = 7;
 const PREFETCH: isize = 2;
 const WHEEL_POINTS_PER_IMAGE: f32 = 50.0;
@@ -109,6 +110,11 @@ pub struct BladrApp {
     last_activity: f64,
     hint_until: f64,
 
+    slideshow_active: bool,
+    slideshow_paused: bool,
+    slideshow_delay: f64,
+    slideshow_loop: bool,
+    slideshow_shuffle: bool,
     slideshow_next: Option<f64>,
     wheel_acc: f32,
     last_wheel: f64,
@@ -138,6 +144,8 @@ pub struct BladrApp {
     focus_visible: bool,
     focus_cache: HashMap<usize, Option<FocusData>>,
     focus_rx: Option<Receiver<(usize, Option<FocusData>)>>,
+    wallpaper_busy: bool,
+    wallpaper_rx: Option<Receiver<Result<(), String>>>,
 }
 
 impl BladrApp {
@@ -179,6 +187,11 @@ impl BladrApp {
             cursor_hidden: false,
             last_activity: 0.0,
             hint_until: 0.0,
+            slideshow_active: false,
+            slideshow_paused: false,
+            slideshow_delay: SLIDESHOW_SECS,
+            slideshow_loop: true,
+            slideshow_shuffle: false,
             slideshow_next: None,
             wheel_acc: 0.0,
             last_wheel: 0.0,
@@ -207,6 +220,8 @@ impl BladrApp {
             focus_visible: false,
             focus_cache: HashMap::new(),
             focus_rx: None,
+            wallpaper_busy: false,
+            wallpaper_rx: None,
         };
 
         if app.settings.auto_update
@@ -384,6 +399,49 @@ impl BladrApp {
         }
     }
 
+    fn set_wallpaper(&mut self, style: WallpaperStyle) {
+        if self.wallpaper_busy {
+            return;
+        }
+        let Some(photo) = self.photos.get(self.index) else {
+            return;
+        };
+        let path = photo.path.clone();
+        let lang = self.lang;
+        let (tx, rx) = mpsc::channel();
+        self.wallpaper_busy = true;
+        self.wallpaper_rx = Some(rx);
+        std::thread::spawn(move || {
+            let _ = tx.send(wallpaper::set(&path, style, lang));
+        });
+    }
+
+    fn restore_wallpaper(&mut self) {
+        if self.wallpaper_busy {
+            return;
+        }
+        let (tx, rx) = mpsc::channel();
+        self.wallpaper_busy = true;
+        self.wallpaper_rx = Some(rx);
+        std::thread::spawn(move || {
+            let _ = tx.send(wallpaper::restore());
+        });
+    }
+
+    fn poll_wallpaper(&mut self, now: f64) {
+        let result = self
+            .wallpaper_rx
+            .as_ref()
+            .and_then(|rx| rx.try_recv().ok());
+        if let Some(result) = result {
+            self.wallpaper_rx = None;
+            self.wallpaper_busy = false;
+            if let Err(error) = result {
+                self.error = Some((error, now + 14.0));
+            }
+        }
+    }
+
     fn open_path(&mut self, path: &Path) {        // A network path such as \\server\share often cannot be probed with
         // `is_dir` before the share is authenticated, so treat anything
         // without a file extension (or with a trailing separator) as a folder.
@@ -457,6 +515,8 @@ impl BladrApp {
         self.zoom = 1.0;
         self.last_scale = 0.0;
         self.error = None;
+        self.slideshow_active = false;
+        self.slideshow_paused = false;
         self.slideshow_next = None;
         self.hint_until = 0.0;
         self.hint_scheduled = false;
@@ -505,8 +565,8 @@ impl BladrApp {
         self.pan = Vec2::ZERO;
         self.error = None;
         self.last_activity = now;
-        if self.slideshow_next.is_some() {
-            self.slideshow_next = Some(now + SLIDESHOW_SECS);
+        if self.slideshow_active && !self.slideshow_paused {
+            self.slideshow_next = Some(now + self.slideshow_delay);
         }
         self.request_exif();
         self.request_focus();
@@ -521,8 +581,8 @@ impl BladrApp {
         self.pan = Vec2::ZERO;
         self.error = None;
         self.last_activity = now;
-        if self.slideshow_next.is_some() {
-            self.slideshow_next = Some(now + SLIDESHOW_SECS);
+        if self.slideshow_active && !self.slideshow_paused {
+            self.slideshow_next = Some(now + self.slideshow_delay);
         }
         self.request_exif();
         self.request_focus();
@@ -794,8 +854,10 @@ impl BladrApp {
         }
 
         if snap.escape {
-            if self.slideshow_next.take().is_some() {
-                // First Escape stops the slideshow.
+            if self.slideshow_active {
+                self.slideshow_active = false;
+                self.slideshow_paused = false;
+                self.slideshow_next = None;
             } else if self.fullscreen {
                 self.set_fullscreen(ctx, false);
             } else {
@@ -822,10 +884,15 @@ impl BladrApp {
         }
 
         if snap.space {
-            self.slideshow_next = match self.slideshow_next {
-                Some(_) => None,
-                None => Some(now + SLIDESHOW_SECS),
-            };
+            if self.slideshow_active {
+                self.slideshow_active = false;
+                self.slideshow_paused = false;
+                self.slideshow_next = None;
+            } else {
+                self.slideshow_active = true;
+                self.slideshow_paused = false;
+                self.slideshow_next = Some(now + self.slideshow_delay);
+            }
             self.last_activity = now;
         }
 
@@ -864,11 +931,39 @@ impl BladrApp {
 
         self.handle_wheel(ctx, rect, snap);
 
-        if let Some(next) = self.slideshow_next {
-            if now >= next {
-                self.navigate(1, now);
-                self.slideshow_next = Some(now + SLIDESHOW_SECS);
+        if self.slideshow_active && !self.slideshow_paused {
+            if let Some(next) = self.slideshow_next {
+                if now >= next {
+                    self.advance_slideshow(now);
+                }
             }
+        }
+    }
+
+    fn advance_slideshow(&mut self, now: f64) {
+        if !self.slideshow_active || self.slideshow_paused || self.photos.is_empty() {
+            return;
+        }
+
+        if self.slideshow_shuffle && self.photos.len() > 1 {
+            let seed = (now.to_bits() as usize) ^ (self.index.wrapping_mul(2654435761));
+            let mut next = seed % self.photos.len();
+            if next == self.index {
+                next = (next + 1) % self.photos.len();
+            }
+            self.jump_to(next, now);
+        } else if self.index + 1 < self.photos.len() {
+            self.jump_to(self.index + 1, now);
+        } else if self.slideshow_loop {
+            self.jump_to(0, now);
+        } else {
+            self.slideshow_active = false;
+            self.slideshow_next = None;
+            return;
+        }
+
+        if self.slideshow_active && !self.slideshow_paused {
+            self.slideshow_next = Some(now + self.slideshow_delay);
         }
     }
 
@@ -1052,6 +1147,31 @@ impl BladrApp {
                                 }
                                 ui.close_menu();
                             }
+                            ui.menu_button(i18n::tr(lang, "menu.wallpaper"), |ui| {
+                                if ui
+                                    .button(i18n::tr(lang, "wallpaper.centered"))
+                                    .clicked()
+                                {
+                                    self.set_wallpaper(WallpaperStyle::Centered);
+                                    ui.close_menu();
+                                }
+                                if ui.button(i18n::tr(lang, "wallpaper.tiled")).clicked() {
+                                    self.set_wallpaper(WallpaperStyle::Tiled);
+                                    ui.close_menu();
+                                }
+                                if ui
+                                    .button(i18n::tr(lang, "wallpaper.stretched"))
+                                    .clicked()
+                                {
+                                    self.set_wallpaper(WallpaperStyle::Stretched);
+                                    ui.close_menu();
+                                }
+                                ui.separator();
+                                if ui.button(i18n::tr(lang, "wallpaper.restore")).clicked() {
+                                    self.restore_wallpaper();
+                                    ui.close_menu();
+                                }
+                            });
                             ui.separator();
                             if ui.button(i18n::tr(lang, "menu.open_folder")).clicked() {
                                 self.pick_folder();
@@ -1224,7 +1344,7 @@ impl BladrApp {
         let lang = self.lang;
         let active = self.hud_pinned
             || snap.time - self.last_activity < HUD_IDLE_SECS
-            || self.slideshow_next.is_some();
+            || self.slideshow_active;
         let alpha = ctx.animate_bool_with_time(Id::new("hud-alpha"), active, 0.28);
         self.hud_alpha = alpha;
         if alpha < 0.02 {
@@ -1308,7 +1428,7 @@ impl BladrApp {
             });
 
         let zoom_label = self.zoom_label(ctx);
-        let slideshow = self.slideshow_next.is_some();
+        let slideshow = self.slideshow_active;
         let right_width = 190.0;
 
         egui::Area::new(Id::new("hud-right"))
@@ -1397,7 +1517,7 @@ impl BladrApp {
                 });
         }
 
-        if !self.photos.is_empty() && now < self.hint_until {
+        if !self.photos.is_empty() && now < self.hint_until && !self.slideshow_active {
             let fade = ((self.hint_until - now) / 1.2).clamp(0.0, 1.0) as f32;
             let w = 380.0;
             egui::Area::new(Id::new("hint"))
@@ -1468,6 +1588,7 @@ impl BladrApp {
         }
 
         self.draw_scan_overlay(ctx, snap);
+        self.draw_slideshow_bar(ctx, now);
 
         if let Some((message, at)) = &self.error {
             if now < *at {
@@ -1500,6 +1621,124 @@ impl BladrApp {
         self.draw_options(ctx);
         self.draw_update(ctx);
         self.draw_path_prompt(ctx);
+    }
+
+    fn draw_slideshow_bar(&mut self, ctx: &egui::Context, now: f64) {
+        if !self.slideshow_active {
+            return;
+        }
+
+        let lang = self.lang;
+        let screen = ctx.screen_rect();
+        let width = 760.0;
+        let mut stop = false;
+
+        egui::Area::new(Id::new("slideshow-bar"))
+            .order(egui::Order::Foreground)
+            .fixed_pos(Pos2::new(
+                screen.center().x - width * 0.5,
+                screen.bottom() - 76.0,
+            ))
+            .show(ctx, |ui| {
+                ui.set_width(width);
+                egui::Frame::NONE
+                    .fill(Color32::from_rgba_unmultiplied(25, 27, 33, 235))
+                    .corner_radius(CornerRadius::same(16))
+                    .inner_margin(Margin::symmetric(16, 10))
+                    .show(ui, |ui| {
+                        ui.set_min_width(width - 32.0);
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                RichText::new(format!(
+                                    "{}/{}",
+                                    self.index + 1,
+                                    self.photos.len().max(1)
+                                ))
+                                .size(12.0)
+                                .color(Color32::from_gray(220)),
+                            );
+                            ui.add_space(10.0);
+                            ui.label(
+                                RichText::new(i18n::tr(lang, "slideshow.delay"))
+                                    .size(11.0)
+                                    .color(Color32::from_gray(180)),
+                            );
+                            let mut delay = self.slideshow_delay;
+                            if ui
+                                .add(
+                                    egui::Slider::new(&mut delay, 1.0..=30.0)
+                                        .show_value(true)
+                                        .suffix(" s"),
+                                )
+                                .on_hover_text(i18n::tr(lang, "slideshow.delay_hint"))
+                                .changed()
+                            {
+                                self.slideshow_delay = delay;
+                                if !self.slideshow_paused {
+                                    self.slideshow_next = Some(now + delay);
+                                }
+                            }
+                            ui.add_space(8.0);
+
+                            if ui.button(i18n::tr(lang, "slideshow.prev")).clicked() {
+                                self.navigate(-1, now);
+                                self.slideshow_next = Some(now + self.slideshow_delay);
+                            }
+                            let pause_label = if self.slideshow_paused {
+                                "slideshow.play"
+                            } else {
+                                "slideshow.pause"
+                            };
+                            if ui.button(i18n::tr(lang, pause_label)).clicked() {
+                                self.slideshow_paused = !self.slideshow_paused;
+                                self.slideshow_next = if self.slideshow_paused {
+                                    None
+                                } else {
+                                    Some(now + self.slideshow_delay)
+                                };
+                            }
+                            if ui.button(i18n::tr(lang, "slideshow.next")).clicked() {
+                                self.navigate(1, now);
+                                self.slideshow_next = Some(now + self.slideshow_delay);
+                            }
+                            ui.add_space(8.0);
+
+                            if ui
+                                .selectable_label(
+                                    self.slideshow_loop,
+                                    i18n::tr(lang, "slideshow.loop"),
+                                )
+                                .clicked()
+                            {
+                                self.slideshow_loop = !self.slideshow_loop;
+                            }
+                            if ui
+                                .selectable_label(
+                                    self.slideshow_shuffle,
+                                    i18n::tr(lang, "slideshow.shuffle"),
+                                )
+                                .clicked()
+                            {
+                                self.slideshow_shuffle = !self.slideshow_shuffle;
+                            }
+
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    if ui.button(i18n::tr(lang, "slideshow.exit")).clicked() {
+                                        stop = true;
+                                    }
+                                },
+                            );
+                        });
+                    });
+            });
+
+        if stop {
+            self.slideshow_active = false;
+            self.slideshow_paused = false;
+            self.slideshow_next = None;
+        }
     }
 
     fn draw_about(&mut self, ctx: &egui::Context) {
@@ -2123,7 +2362,7 @@ impl BladrApp {
             && !self.failed.contains(&self.index)
             && self.error.is_none();
         let animating = self.hud_alpha > 0.0 && self.hud_alpha < 1.0;
-        if loading || self.slideshow_next.is_some() || animating {
+        if loading || self.slideshow_active || animating {
             ctx.request_repaint_after(Duration::from_millis(80));
         }
         if snap.time < self.hint_until {
@@ -2150,6 +2389,7 @@ impl eframe::App for BladrApp {
         self.poll_update();
         self.poll_exif();
         self.poll_focus();
+        self.poll_wallpaper(snap.time);
         self.poll_incoming(ctx);
         self.handle_input(ctx, rect, &snap);
         self.prefetch();

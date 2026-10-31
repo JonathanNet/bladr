@@ -58,30 +58,75 @@ pub fn latest_version() -> Result<String, String> {
 }
 
 pub fn download_path(version: &str) -> Result<PathBuf, String> {
-    let root = std::env::var_os("BLADR_UPDATE_ROOT")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("LOCALAPPDATA").map(PathBuf::from))
-        .ok_or_else(|| "LOCALAPPDATA is not set".to_owned())?;
-    let dir = root.join("Bladr").join("Updates");
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    Ok(dir.join(format!("Bladr-{version}-Setup.exe")))
+    let mut roots = Vec::new();
+    if let Some(root) = std::env::var_os("BLADR_UPDATE_ROOT") {
+        roots.push(PathBuf::from(root));
+    }
+    if let Some(root) = std::env::var_os("LOCALAPPDATA") {
+        roots.push(PathBuf::from(root));
+    }
+    if let Some(root) = std::env::var_os("TEMP") {
+        roots.push(PathBuf::from(root));
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            roots.push(dir.to_path_buf());
+        }
+    }
+
+    let mut errors = Vec::new();
+    for root in roots {
+        let dir = root.join("Bladr").join("Updates");
+        match std::fs::create_dir_all(&dir) {
+            Ok(()) => return Ok(dir.join(format!("Bladr-{version}-Setup.exe"))),
+            Err(error) => errors.push(format!("{}: {error}", dir.display())),
+        }
+    }
+    Err(format!("could not create update folder: {}", errors.join("; ")))
 }
 
 pub fn download(info: &UpdateInfo) -> Result<PathBuf, String> {
     let path = download_path(&info.version)?;
     let bytes = http_get(&info.url, MAX_INSTALLER)?.body;
-    let temp = path.with_extension("download");
-    std::fs::write(&temp, &bytes).map_err(|e| e.to_string())?;
-    std::fs::rename(&temp, &path).map_err(|e| e.to_string())?;
-    Ok(path)
+
+    let temp = path.with_extension(format!("download-{}", std::process::id()));
+    std::fs::write(&temp, &bytes)
+        .map_err(|error| format!("write {}: {error}", temp.display()))?;
+
+    if path.exists() {
+        let _ = std::fs::remove_file(&path);
+    }
+    match std::fs::rename(&temp, &path) {
+        Ok(()) => Ok(path),
+        Err(first) => {
+            // Antivirus or another process may briefly keep the destination
+            // open. Fall back to a unique sibling instead of losing the update.
+            let fallback = path.with_file_name(format!(
+                "Bladr-{}-Setup-{}.exe",
+                info.version,
+                std::process::id()
+            ));
+            std::fs::rename(&temp, &fallback)
+                .map_err(|second| format!("{first}; {second}"))?;
+            Ok(fallback)
+        }
+    }
 }
 
 pub fn run_installer(path: &Path) -> Result<(), String> {
-    Command::new(path)
-        .args(["/SILENT", "/SUPPRESSMSGBOXES", "/NORESTART"])
+    if !path.is_file() {
+        return Err(format!("installer not found: {}", path.display()));
+    }
+    let parent = path.parent();
+    let mut command = Command::new(path);
+    command.args(["/SILENT", "/SUPPRESSMSGBOXES", "/NORESTART"]);
+    if let Some(parent) = parent {
+        command.current_dir(parent);
+    }
+    command
         .spawn()
         .map(|_| ())
-        .map_err(|e| e.to_string())
+        .map_err(|error| format!("start {}: {error}", path.display()))
 }
 
 fn is_newer(candidate: &str, current: &str) -> bool {

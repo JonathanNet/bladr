@@ -14,6 +14,7 @@ mod settings;
 mod single_instance;
 mod tiff;
 mod update;
+mod wallpaper;
 
 use std::path::PathBuf;
 

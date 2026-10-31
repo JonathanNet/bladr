@@ -12,12 +12,12 @@ Bladr is an independent program and contains no code from ACDSee.
 
 There are two options under **Releases** on GitHub:
 
-- **`Bladr-0.2.9-Setup.exe`** — Windows installer.
+- **`Bladr-0.3.0-Setup.exe`** — Windows installer.
 - **`Bladr.exe`** — portable single file that can be copied anywhere.
 
 ### Installation
 
-Run `Bladr-0.2.9-Setup.exe`. It installs **per user** and requires **no
+Run `Bladr-0.3.0-Setup.exe`. It installs **per user** and requires **no
 administrator rights**. It creates:
 
 - A Start-menu shortcut and an optional desktop shortcut.
@@ -58,6 +58,10 @@ choice is saved in `%APPDATA%\Bladr\language.txt`.
   date. Toggle it with `I`; the HUD stays visible while it is open.
 - **Focus points** overlay for Canon CR3: **right-click → Show Focus Points**.
   Reads Canon's AFInfo2 record and draws the selected AF area over the image.
+- **Set Wallpaper** submenu: Centered, Tiled, Stretched and Restore. RAW files
+  are converted to a temporary PNG before Windows uses them.
+- **Slideshow bar** with delay, previous/next, pause/play, loop and shuffle.
+  Start with `Space`, leave full screen with `Esc`, or press **Exit** on the bar.
 - **Drag & drop** of a file or folder, plus `O` (folder) and `Ctrl+O` (file).
 - **Single instance:** opening another image from Explorer reuses the running
   Bladr window instead of starting a second copy.
@@ -89,6 +93,8 @@ choice is saved in `%APPDATA%\Bladr\language.txt`.
 | Zoom in / out | `+` / `-`, `Ctrl` + wheel |
 | Pan | Drag with the mouse (when zoomed in) |
 | Slideshow | `Space` |
+| Slideshow delay / loop / shuffle | Controls on the slideshow bar |
+| Set wallpaper | Right-click → Set Wallpaper |
 | Show EXIF info / keep HUD | `I` |
 | Show/hide focus points | Right-click → Show Focus Points, `F3` |
 | Switch language (Danish/English) | `Alt+L` |
