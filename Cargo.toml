@@ -1,0 +1,23 @@
+﻿[package]
+name = "bladr"
+version = "0.2.3"
+edition = "2021"
+description = "A fast, keyboard- and wheel-driven photo viewer for Windows"
+license = "MIT"
+
+[dependencies]
+eframe = { version = "0.31.1", default-features = false, features = ["glow", "default_fonts"] }
+image = { version = "0.25.10", default-features = false, features = [
+    "bmp", "dds", "ff", "gif", "hdr", "ico", "jpeg", "png", "pnm", "qoi", "tga", "tiff", "webp",
+] }
+rfd = "0.15.4"
+flate2 = "1.1"
+weezl = "0.1"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+strip = true
+

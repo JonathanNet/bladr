@@ -1,0 +1,54 @@
+# Build output
+/target/
+/dist/
+
+# Internal analysis and private test material
+/rea-acdsee/
+/testimgs/
+ANALYSE.md
+
+# Photos and RAW files must never be committed
+*.dng
+*.nef
+*.nrw
+*.cr3
+*.cr2
+*.crw
+*.arw
+*.srf
+*.sr2
+*.orf
+*.rw2
+*.raf
+*.pef
+*.srw
+*.rwl
+*.3fr
+*.erf
+*.mef
+*.mos
+*.mrw
+*.x3f
+*.iiq
+*.k25
+*.kdc
+*.dcr
+*.jpg
+*.jpeg
+*.tif
+*.tiff
+*.webp
+*.bmp
+*.gif
+
+# Keep the application icon even though it is a PNG
+!/assets/*.png
+!/docs/*.png
+
+# Editor and OS noise
+.vscode/
+.idea/
+*.log
+*.tmp
+Thumbs.db
+.DS_Store
