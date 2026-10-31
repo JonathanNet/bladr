@@ -12,12 +12,12 @@ Bladr er et selvstændigt program og indeholder ingen kode fra ACDSee.
 
 Der er to muligheder under **Releases** på GitHub:
 
-- **`Bladr-0.2.6-Setup.exe`** – installationsprogram til Windows.
+- **`Bladr-0.2.7-Setup.exe`** – installationsprogram til Windows.
 - **`Bladr.exe`** – portabel enkeltfil, som kan kopieres hvor som helst hen.
 
 ### Installation
 
-Kør `Bladr-0.2.6-Setup.exe`. Installationen er **per bruger** og kræver
+Kør `Bladr-0.2.7-Setup.exe`. Installationen er **per bruger** og kræver
 **ingen administrator**. Den opretter:
 
 - Start-menu-genvej og valgfri skrivebordsgenvej.
@@ -55,6 +55,8 @@ og valget gemmes i `%APPDATA%\Bladr\language.txt`.
   toner frem ved aktivitet og forsvinder efter et par sekunder.
 - **EXIF-overlay** med lukketid, blænde, ISO, brændvidde, kamera og dato.
   Slås til/fra med `I`; HUD'en bliver stående, mens den vises.
+- **Fokuspunkter** for Canon CR3: **højreklik → Vis fokuspunkter**. Læser
+  Canons AFInfo2-record og tegner det valgte AF-område oven på billedet.
 - **Drag & drop** af en fil eller mappe, samt `O` (mappe) og `Ctrl+O` (fil).
 - **Kun én instans:** åbner man et nyt billede fra Stifinder, bruges det
   kørende Bladr-vindue i stedet for at starte en ny kopi.
@@ -88,6 +90,7 @@ og valget gemmes i `%APPDATA%\Bladr\language.txt`.
 | Panorér | Træk med musen (når zoomet ind) |
 | Auto-afspilning | `Mellemrum` |
 | Vis EXIF / hold HUD | `I` |
+| Vis/skjul fokuspunkter | Højreklik → Vis fokuspunkter, `F3` |
 | Skift sprog (dansk/engelsk) | `Alt+L` |
 | Indstillinger (opdatering, sprog) | `F2` |
 | Om-dialog | `F1` eller højreklik → Om Bladr… |
@@ -197,6 +200,8 @@ versions-tag.
 - HEIC/HEIF og video er ikke understøttet. Det kræver platformens codecs.
 - RAW vises som kameraets JPEG-preview, ikke som en fuld demosaicing.
 - DNG med JPEG XL-komprimering (DxO PureRAW) understøttes ikke.
+- Fokuspunkt-overlay er foreløbig kun til Canon CR3; DxO-DNG-filer fjerner de
+  maker-notes, som indeholder fokuspunkterne.
 - Animerede GIF/WebP vises som første frame.
 - Der er ingen katalogdatabase, metadata-editor eller ikke-destruktive
   redigeringer – det er en fremviser, ikke en ACDSee-erstatning.

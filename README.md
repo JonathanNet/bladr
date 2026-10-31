@@ -12,12 +12,12 @@ Bladr is an independent program and contains no code from ACDSee.
 
 There are two options under **Releases** on GitHub:
 
-- **`Bladr-0.2.6-Setup.exe`** — Windows installer.
+- **`Bladr-0.2.7-Setup.exe`** — Windows installer.
 - **`Bladr.exe`** — portable single file that can be copied anywhere.
 
 ### Installation
 
-Run `Bladr-0.2.6-Setup.exe`. It installs **per user** and requires **no
+Run `Bladr-0.2.7-Setup.exe`. It installs **per user** and requires **no
 administrator rights**. It creates:
 
 - A Start-menu shortcut and an optional desktop shortcut.
@@ -56,6 +56,8 @@ choice is saved in `%APPDATA%\Bladr\language.txt`.
   fades in on activity and disappears after a few seconds.
 - **EXIF overlay** with shutter speed, aperture, ISO, focal length, camera and
   date. Toggle it with `I`; the HUD stays visible while it is open.
+- **Focus points** overlay for Canon CR3: **right-click → Show Focus Points**.
+  Reads Canon's AFInfo2 record and draws the selected AF area over the image.
 - **Drag & drop** of a file or folder, plus `O` (folder) and `Ctrl+O` (file).
 - **Single instance:** opening another image from Explorer reuses the running
   Bladr window instead of starting a second copy.
@@ -87,6 +89,7 @@ choice is saved in `%APPDATA%\Bladr\language.txt`.
 | Pan | Drag with the mouse (when zoomed in) |
 | Slideshow | `Space` |
 | Show EXIF info / keep HUD | `I` |
+| Show/hide focus points | Right-click → Show Focus Points, `F3` |
 | Switch language (Danish/English) | `Alt+L` |
 | Options | `F2` |
 | About dialog | `F1` or right-click → About Bladr… |
@@ -207,6 +210,8 @@ on a version tag.
 - HEIC/HEIF and video are not supported; those need platform codecs.
 - RAW is shown as the camera's JPEG preview, not a full demosaic.
 - DNG with JPEG XL compression (DxO PureRAW) is not supported.
+- Focus-point overlay is currently limited to Canon CR3; DxO DNG exports strip
+  the camera maker notes that contain focus points.
 - Animated GIF/WebP show the first frame.
 - There is no catalogue database, metadata editor or non-destructive editing —
   it is a viewer, not an ACDSee replacement.

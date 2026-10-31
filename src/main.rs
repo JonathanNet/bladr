@@ -7,6 +7,7 @@
 mod app;
 mod decode;
 mod exif;
+mod focus;
 mod i18n;
 mod library;
 mod settings;

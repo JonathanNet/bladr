@@ -7,11 +7,12 @@ use std::time::Duration;
 
 use eframe::egui::{
     self, Align2, Color32, CornerRadius, CursorIcon, FontId, Id, Key, Margin, Pos2, Rect, RichText,
-    Sense, Stroke, TextureHandle, TextureOptions, Vec2,
+    Sense, Stroke, StrokeKind, TextureHandle, TextureOptions, Vec2,
 };
 
 use crate::decode::{DecodeEvent, Decoder};
 use crate::exif::{self, ExifData};
+use crate::focus::{self, FocusData};
 use crate::i18n::{self, Lang};
 use crate::library::{self, Photo};
 use crate::settings::{self, Settings};
@@ -30,6 +31,8 @@ struct Tex {
     size: Vec2,
     /// Full-resolution dimensions after EXIF orientation.
     source: [u32; 2],
+    /// EXIF orientation code applied to the pixels.
+    orientation: u16,
     /// True when the pixels are a RAW file's embedded preview.
     raw: bool,
 }
@@ -62,6 +65,7 @@ struct Snapshot {
     open_path_prompt: bool,
     about: bool,
     options: bool,
+    focus_toggle: bool,
     toggle_language: bool,
     dropped: Vec<PathBuf>,
     hovered_files: bool,
@@ -130,6 +134,9 @@ pub struct BladrApp {
     exif_visible: bool,
     exif_cache: HashMap<usize, Option<ExifData>>,
     exif_rx: Option<Receiver<(usize, Option<ExifData>)>>,
+    focus_visible: bool,
+    focus_cache: HashMap<usize, Option<FocusData>>,
+    focus_rx: Option<Receiver<(usize, Option<FocusData>)>>,
 }
 
 impl BladrApp {
@@ -194,6 +201,9 @@ impl BladrApp {
             exif_visible: false,
             exif_cache: HashMap::new(),
             exif_rx: None,
+            focus_visible: false,
+            focus_cache: HashMap::new(),
+            focus_rx: None,
         };
 
         if app.settings.auto_update
@@ -335,6 +345,35 @@ impl BladrApp {
         }
     }
 
+    fn request_focus(&mut self) {
+        if !self.focus_visible || self.focus_rx.is_some() {
+            return;
+        }
+        if self.focus_cache.contains_key(&self.index) {
+            return;
+        }
+        let Some(photo) = self.photos.get(self.index) else {
+            return;
+        };
+        let index = self.index;
+        let path = photo.path.clone();
+        let (tx, rx) = mpsc::channel();
+        self.focus_rx = Some(rx);
+        std::thread::spawn(move || {
+            let data = focus::read(&path);
+            let _ = tx.send((index, data));
+        });
+    }
+
+    fn poll_focus(&mut self) {
+        let result = self.focus_rx.as_ref().and_then(|rx| rx.try_recv().ok());
+        if let Some((index, data)) = result {
+            self.focus_rx = None;
+            self.focus_cache.insert(index, data);
+            self.request_focus();
+        }
+    }
+
     fn open_path(&mut self, path: &Path) {        // A network path such as \\server\share often cannot be probed with
         // `is_dir` before the share is authenticated, so treat anything
         // without a file extension (or with a trailing separator) as a folder.
@@ -398,6 +437,8 @@ impl BladrApp {
         self.textures.clear();
         self.exif_cache.clear();
         self.exif_rx = None;
+        self.focus_cache.clear();
+        self.focus_rx = None;
         self.failed.clear();
         self.shown = self.index;
         self.has_shown = false;
@@ -458,6 +499,7 @@ impl BladrApp {
             self.slideshow_next = Some(now + SLIDESHOW_SECS);
         }
         self.request_exif();
+        self.request_focus();
     }
 
     fn jump_to(&mut self, index: usize, now: f64) {
@@ -473,6 +515,7 @@ impl BladrApp {
             self.slideshow_next = Some(now + SLIDESHOW_SECS);
         }
         self.request_exif();
+        self.request_focus();
     }
 
     fn toggle_fullscreen(&mut self, ctx: &egui::Context, now: f64) {
@@ -558,6 +601,7 @@ impl BladrApp {
                         handle,
                         size: Vec2::new(decoded.width as f32, decoded.height as f32),
                         source: [decoded.source_width, decoded.source_height],
+                        orientation: decoded.orientation,
                         raw: decoded.raw,
                     };
                     self.textures.insert(decoded.index, tex);
@@ -646,6 +690,7 @@ impl BladrApp {
             open_path_prompt: i.key_pressed(Key::L) && (i.modifiers.ctrl || i.modifiers.command),
             about: i.key_pressed(Key::F1),
             options: i.key_pressed(Key::F2),
+            focus_toggle: i.key_pressed(Key::F3),
             toggle_language: i.key_pressed(Key::L) && i.modifiers.alt,
             dropped: i
                 .raw
@@ -783,6 +828,14 @@ impl BladrApp {
             self.last_activity = now;
         }
 
+        if snap.focus_toggle {
+            self.focus_visible = !self.focus_visible;
+            if self.focus_visible {
+                self.request_focus();
+            }
+            self.last_activity = now;
+        }
+
         if snap.fit {
             self.fit = true;
             self.pan = Vec2::ZERO;
@@ -905,9 +958,17 @@ impl BladrApp {
 
                 let display = self
                     .displayed_tex()
-                    .map(|(idx, tex)| (idx, tex.handle.id(), tex.size, tex.source));
+                    .map(|(idx, tex)| {
+                        (
+                            idx,
+                            tex.handle.id(),
+                            tex.size,
+                            tex.source,
+                            tex.orientation,
+                        )
+                    });
 
-                if let Some((_idx, texture_id, size, _source)) = display {
+                if let Some((idx, texture_id, size, _source, orientation)) = display {
                     let fit = (avail.width() / size.x)
                         .min(avail.height() / size.y)
                         .min(1.0);
@@ -931,6 +992,7 @@ impl BladrApp {
                         Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)),
                         Color32::WHITE,
                     );
+                    self.draw_focus(ui, image_rect, idx, orientation);
 
                     let zoomed_in = draw_size.x > avail.width() + 1.0
                         || draw_size.y > avail.height() + 1.0;
@@ -966,6 +1028,18 @@ impl BladrApp {
                                 self.fit = false;
                                 self.zoom = 1.0 / ctx.pixels_per_point();
                                 self.pan = Vec2::ZERO;
+                                ui.close_menu();
+                            }
+                            let focus_key = if self.focus_visible {
+                                "menu.focus_hide"
+                            } else {
+                                "menu.focus_show"
+                            };
+                            if ui.button(i18n::tr(lang, focus_key)).clicked() {
+                                self.focus_visible = !self.focus_visible;
+                                if self.focus_visible {
+                                    self.request_focus();
+                                }
                                 ui.close_menu();
                             }
                             ui.separator();
@@ -1048,6 +1122,88 @@ impl BladrApp {
             if response.clicked() {
                 self.navigate(dir, now);
             }
+        }
+    }
+
+    fn draw_focus(&self, ui: &egui::Ui, image_rect: Rect, index: usize, orientation: u16) {
+        if !self.focus_visible {
+            return;
+        }
+        let data = match self.focus_cache.get(&index) {
+            Some(Some(data)) => data,
+            Some(None) => {
+                ui.painter().text(
+                    image_rect.center_bottom() - Vec2::new(0.0, 24.0),
+                    Align2::CENTER_BOTTOM,
+                    i18n::tr(self.lang, "focus.none"),
+                    FontId::proportional(12.0),
+                    Color32::from_gray(190),
+                );
+                return;
+            }
+            None => {
+                ui.painter().text(
+                    image_rect.center_bottom() - Vec2::new(0.0, 24.0),
+                    Align2::CENTER_BOTTOM,
+                    i18n::tr(self.lang, "focus.loading"),
+                    FontId::proportional(12.0),
+                    Color32::from_gray(190),
+                );
+                return;
+            }
+        };
+
+        for point in &data.points {
+            let (mut cx, mut cy, mut width, mut height) =
+                (point.x, point.y, point.width, point.height);
+            match orientation {
+                3 => {
+                    cx = 1.0 - cx;
+                    cy = 1.0 - cy;
+                }
+                6 => {
+                    let (old_x, old_y) = (cx, cy);
+                    cx = 1.0 - old_y;
+                    cy = old_x;
+                    std::mem::swap(&mut width, &mut height);
+                }
+                8 => {
+                    let (old_x, old_y) = (cx, cy);
+                    cx = old_y;
+                    cy = 1.0 - old_x;
+                    std::mem::swap(&mut width, &mut height);
+                }
+                _ => {}
+            }
+
+            let center = Pos2::new(
+                image_rect.left() + cx * image_rect.width(),
+                image_rect.top() + cy * image_rect.height(),
+            );
+            let rect = Rect::from_center_size(
+                center,
+                Vec2::new(
+                    (width * image_rect.width()).max(12.0),
+                    (height * image_rect.height()).max(12.0),
+                ),
+            )
+            .intersect(image_rect);
+
+            if rect.width() <= 0.0 || rect.height() <= 0.0 {
+                continue;
+            }
+
+            ui.painter().rect_filled(
+                rect,
+                CornerRadius::same(2),
+                Color32::from_rgba_unmultiplied(255, 70, 60, 24),
+            );
+            ui.painter().rect_stroke(
+                rect,
+                CornerRadius::same(2),
+                Stroke::new(2.0_f32, Color32::from_rgb(255, 76, 66)),
+                StrokeKind::Inside,
+            );
         }
     }
 
@@ -1947,6 +2103,7 @@ impl eframe::App for BladrApp {
         self.poll_decoder(ctx, snap.time);
         self.poll_update();
         self.poll_exif();
+        self.poll_focus();
         self.poll_incoming(ctx);
         self.handle_input(ctx, rect, &snap);
         self.prefetch();

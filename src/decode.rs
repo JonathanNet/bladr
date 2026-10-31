@@ -48,6 +48,8 @@ pub struct Decoded {
     pub source_height: u32,
     /// True when the pixels came from the RAW file's embedded preview.
     pub raw: bool,
+    /// EXIF orientation code (1, 3, 6 or 8) applied to the pixels.
+    pub orientation: u16,
 }
 
 pub enum DecodeEvent {
@@ -240,7 +242,9 @@ fn decode_regular(path: &Path, lang: Lang) -> Result<Decoded, String> {
         .map_err(|e| i18n::tf(lang, "decode.decode", &[("e", &e.to_string())]))?;
     image.apply_orientation(orientation);
 
-    finish(image, false)
+    let mut decoded = finish(image, false)?;
+    decoded.orientation = orientation_code(orientation);
+    Ok(decoded)
 }
 
 fn finish(mut image: DynamicImage, raw: bool) -> Result<Decoded, String> {
@@ -262,7 +266,21 @@ fn finish(mut image: DynamicImage, raw: bool) -> Result<Decoded, String> {
         source_width,
         source_height,
         raw,
+        orientation: 1,
     })
+}
+
+fn orientation_code(orientation: Orientation) -> u16 {
+    match orientation {
+        Orientation::Rotate90 => 6,
+        Orientation::Rotate180 => 3,
+        Orientation::Rotate270 => 8,
+        Orientation::FlipHorizontal => 2,
+        Orientation::FlipVertical => 4,
+        Orientation::Rotate90FlipH => 5,
+        Orientation::Rotate270FlipH => 7,
+        Orientation::NoTransforms => 1,
+    }
 }
 
 /// Decode a RAW file through the largest embedded JPEG preview.
@@ -325,7 +343,9 @@ fn decode_raw_preview_data(data: &[u8], lang: Lang) -> Result<Decoded, String> {
     };
     image.apply_orientation(orientation);
 
-    finish(image, true)
+    let mut decoded = finish(image, true)?;
+    decoded.orientation = orientation_code(orientation);
+    Ok(decoded)
 }
 
 fn decode_jpeg(bytes: &[u8]) -> Result<(u32, u32, DynamicImage, Orientation), String> {
