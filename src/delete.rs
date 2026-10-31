@@ -10,6 +10,7 @@ const FOF_NOCONFIRMATION: u16 = 0x0010;
 const FOF_ALLOWUNDO: u16 = 0x0040;
 const FOF_NOERRORUI: u16 = 0x0400;
 const FILE_ATTRIBUTE_READONLY: u32 = 0x0000_0001;
+const COINIT_APARTMENTTHREADED: u32 = 0x0000_0002;
 
 #[repr(C)]
 struct FileOp {
@@ -75,7 +76,6 @@ fn clear_readonly(path: &Path) -> Result<(), String> {
 }
 
 pub fn to_recycle_bin(path: &Path) -> Result<(), String> {
-    let network = is_network(path);
     let path = path
         .canonicalize()
         .map_err(|error| format!("delete path: {error}"))?;
@@ -86,13 +86,6 @@ pub fn to_recycle_bin(path: &Path) -> Result<(), String> {
     // Windows refuses to delete read-only files, even when Explorer would
     // offer to remove the attribute. Do it after the user has confirmed.
     clear_readonly(&path)?;
-
-    // Network shares do not have a Recycle Bin; Explorer deletes there
-    // permanently, so do the same after the confirmation dialog.
-    if network {
-        return remove_with_retry(&path)
-            .map_err(|error| format!("delete network file: {error}"));
-    }
 
     let mut text = path.display().to_string();
     if let Some(rest) = text.strip_prefix(r"\\?\UNC\") {
@@ -116,15 +109,25 @@ pub fn to_recycle_bin(path: &Path) -> Result<(), String> {
         progress_title: std::ptr::null(),
     };
 
+    // SHFileOperation is a shell API and must run on a COM-initialized
+    // thread. Without this it can return ERROR_CALL_NOT_IMPLEMENTED (120)
+    // on worker threads.
+    let com = unsafe { CoInitializeEx(std::ptr::null_mut(), COINIT_APARTMENTTHREADED) };
     let code = unsafe { SHFileOperationW(&mut operation) };
+    if com == 0 || com == 1 {
+        unsafe {
+            CoUninitialize();
+        }
+    }
+
     if code == 0 && operation.aborted == 0 {
         Ok(())
     } else if operation.aborted != 0 {
         Err("delete was cancelled".to_owned())
     } else {
         // Some filesystems/long paths do not support the shell recycle
-        // operation (ERROR_CALL_NOT_IMPLEMENTED = 120). Fall back to a
-        // normal delete rather than leaving the user stuck.
+        // operation. Fall back to a normal delete rather than leaving the
+        // user stuck.
         match remove_with_retry(&path) {
             Ok(()) => Ok(()),
             Err(error) => Err(format!(
@@ -168,4 +171,10 @@ extern "system" {
     fn GetFileAttributesW(path: *const u16) -> u32;
     fn SetFileAttributesW(path: *const u16, attributes: u32) -> i32;
     fn GetLastError() -> u32;
+}
+
+#[link(name = "ole32")]
+extern "system" {
+    fn CoInitializeEx(reserved: *mut c_void, coinit: u32) -> i32;
+    fn CoUninitialize();
 }
