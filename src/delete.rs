@@ -9,6 +9,7 @@ const FOF_SILENT: u16 = 0x0004;
 const FOF_NOCONFIRMATION: u16 = 0x0010;
 const FOF_ALLOWUNDO: u16 = 0x0040;
 const FOF_NOERRORUI: u16 = 0x0400;
+const FILE_ATTRIBUTE_READONLY: u32 = 0x0000_0001;
 
 #[repr(C)]
 struct FileOp {
@@ -44,6 +45,35 @@ fn drive_type(drive: char) -> u32 {
     unsafe { GetDriveTypeW(wide.as_ptr()) }
 }
 
+fn clear_readonly(path: &Path) -> Result<(), String> {
+    let wide: Vec<u16> = path
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    let attributes = unsafe { GetFileAttributesW(wide.as_ptr()) };
+    if attributes == u32::MAX {
+        return Err(format!(
+            "read attributes (Windows error {})",
+            unsafe { GetLastError() }
+        ));
+    }
+    if attributes & FILE_ATTRIBUTE_READONLY == 0 {
+        return Ok(());
+    }
+    let result = unsafe {
+        SetFileAttributesW(wide.as_ptr(), attributes & !FILE_ATTRIBUTE_READONLY)
+    };
+    if result == 0 {
+        Err(format!(
+            "clear read-only attribute (Windows error {})",
+            unsafe { GetLastError() }
+        ))
+    } else {
+        Ok(())
+    }
+}
+
 pub fn to_recycle_bin(path: &Path) -> Result<(), String> {
     let network = is_network(path);
     let path = path
@@ -53,10 +83,14 @@ pub fn to_recycle_bin(path: &Path) -> Result<(), String> {
         return Err("file no longer exists".to_owned());
     }
 
+    // Windows refuses to delete read-only files, even when Explorer would
+    // offer to remove the attribute. Do it after the user has confirmed.
+    clear_readonly(&path)?;
+
     // Network shares do not have a Recycle Bin; Explorer deletes there
     // permanently, so do the same after the confirmation dialog.
     if network {
-        return std::fs::remove_file(&path)
+        return remove_with_retry(&path)
             .map_err(|error| format!("delete network file: {error}"));
     }
 
@@ -91,13 +125,36 @@ pub fn to_recycle_bin(path: &Path) -> Result<(), String> {
         // Some filesystems/long paths do not support the shell recycle
         // operation (ERROR_CALL_NOT_IMPLEMENTED = 120). Fall back to a
         // normal delete rather than leaving the user stuck.
-        match std::fs::remove_file(&path) {
+        match remove_with_retry(&path) {
             Ok(()) => Ok(()),
             Err(error) => Err(format!(
                 "Windows could not delete the file ({code}); {error}"
             )),
         }
     }
+}
+
+/// A decoder or thumbnail provider may keep the file open for a moment after
+/// the user confirms. Retry deletion briefly before giving up.
+fn remove_with_retry(path: &Path) -> std::io::Result<()> {
+    let mut last = None;
+    for attempt in 0..8 {
+        match std::fs::remove_file(path) {
+            Ok(()) => return Ok(()),
+            Err(error) => {
+                let retry = matches!(
+                    error.kind(),
+                    std::io::ErrorKind::PermissionDenied | std::io::ErrorKind::WouldBlock
+                );
+                last = Some(error);
+                if !retry {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(120 + attempt * 40));
+            }
+        }
+    }
+    Err(last.unwrap_or_else(|| std::io::Error::other("delete failed")))
 }
 
 #[link(name = "shell32")]
@@ -108,4 +165,7 @@ extern "system" {
 #[link(name = "kernel32")]
 extern "system" {
     fn GetDriveTypeW(root: *const u16) -> u32;
+    fn GetFileAttributesW(path: *const u16) -> u32;
+    fn SetFileAttributesW(path: *const u16, attributes: u32) -> i32;
+    fn GetLastError() -> u32;
 }

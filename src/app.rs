@@ -471,6 +471,8 @@ impl BladrApp {
         let (tx, rx) = mpsc::channel();
         self.delete_busy = true;
         self.delete_rx = Some(rx);
+        // Stop the decoder before deleting so it cannot hold the file open.
+        self.decoder = Decoder::spawn();
         std::thread::spawn(move || {
             let _ = tx.send(delete::to_recycle_bin(&path));
         });
