@@ -12,12 +12,12 @@ Bladr is an independent program and contains no code from ACDSee.
 
 There are two options under **Releases** on GitHub:
 
-- **`Bladr-0.3.1-Setup.exe`** — Windows installer.
+- **`Bladr-0.3.2-Setup.exe`** — Windows installer.
 - **`Bladr.exe`** — portable single file that can be copied anywhere.
 
 ### Installation
 
-Run `Bladr-0.3.1-Setup.exe`. It installs **per user** and requires **no
+Run `Bladr-0.3.2-Setup.exe`. It installs **per user** and requires **no
 administrator rights**. It creates:
 
 - A Start-menu shortcut and an optional desktop shortcut.
@@ -63,6 +63,8 @@ choice is saved in `%APPDATA%\Bladr\language.txt`.
 - **Slideshow bar** with delay, previous/next, pause/play, loop and shuffle.
   Start with `Space`, leave full screen with `Esc`, or press **Exit** on the bar.
   The HUD and bar hide when the mouse is still and return when it moves.
+- **Delete image** with `Del`: a confirmation dialog moves the file to the
+  Recycle Bin and then shows the next image.
 - **Drag & drop** of a file or folder, plus `O` (folder) and `Ctrl+O` (file).
 - **Single instance:** opening another image from Explorer reuses the running
   Bladr window instead of starting a second copy.
@@ -95,6 +97,7 @@ choice is saved in `%APPDATA%\Bladr\language.txt`.
 | Pan | Drag with the mouse (when zoomed in) |
 | Slideshow | `Space` |
 | Slideshow delay / loop / shuffle | Controls on the slideshow bar |
+| Delete image | `Del` |
 | Set wallpaper | Right-click → Set Wallpaper |
 | Show EXIF info / keep HUD | `I` |
 | Show/hide focus points | Right-click → Show Focus Points, `F3` |

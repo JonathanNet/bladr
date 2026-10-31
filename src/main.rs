@@ -6,6 +6,7 @@
 
 mod app;
 mod decode;
+mod delete;
 mod exif;
 mod focus;
 mod i18n;

@@ -11,6 +11,7 @@ use eframe::egui::{
 };
 
 use crate::decode::{DecodeEvent, Decoder};
+use crate::delete;
 use crate::exif::{self, ExifData};
 use crate::focus::{self, FocusData};
 use crate::i18n::{self, Lang};
@@ -67,6 +68,7 @@ struct Snapshot {
     about: bool,
     options: bool,
     focus_toggle: bool,
+    delete: bool,
     toggle_language: bool,
     dropped: Vec<PathBuf>,
     hovered_files: bool,
@@ -144,6 +146,10 @@ pub struct BladrApp {
     focus_visible: bool,
     focus_cache: HashMap<usize, Option<FocusData>>,
     focus_rx: Option<Receiver<(usize, Option<FocusData>)>>,
+    delete_open: bool,
+    delete_path: Option<PathBuf>,
+    delete_busy: bool,
+    delete_rx: Option<Receiver<Result<(), String>>>,
     wallpaper_busy: bool,
     wallpaper_rx: Option<Receiver<Result<(), String>>>,
 }
@@ -220,6 +226,10 @@ impl BladrApp {
             focus_visible: false,
             focus_cache: HashMap::new(),
             focus_rx: None,
+            delete_open: false,
+            delete_path: None,
+            delete_busy: false,
+            delete_rx: None,
             wallpaper_busy: false,
             wallpaper_rx: None,
         };
@@ -440,6 +450,84 @@ impl BladrApp {
                 self.error = Some((error, now + 14.0));
             }
         }
+    }
+
+    fn request_delete(&mut self) {
+        if self.photos.is_empty() {
+            return;
+        }
+        self.delete_path = Some(self.photos[self.index].path.clone());
+        self.delete_open = true;
+    }
+
+    fn confirm_delete(&mut self) {
+        if self.delete_busy {
+            return;
+        }
+        let Some(path) = self.delete_path.clone() else {
+            self.delete_open = false;
+            return;
+        };
+        let (tx, rx) = mpsc::channel();
+        self.delete_busy = true;
+        self.delete_rx = Some(rx);
+        std::thread::spawn(move || {
+            let _ = tx.send(delete::to_recycle_bin(&path));
+        });
+    }
+
+    fn poll_delete(&mut self, now: f64) {
+        let result = self.delete_rx.as_ref().and_then(|rx| rx.try_recv().ok());
+        if let Some(result) = result {
+            self.delete_rx = None;
+            self.delete_busy = false;
+            match result {
+                Ok(()) => {
+                    if let Some(path) = self.delete_path.take() {
+                        self.remove_photo(&path);
+                    }
+                    self.delete_open = false;
+                }
+                Err(error) => {
+                    self.delete_open = false;
+                    self.error = Some((
+                        i18n::tf(self.lang, "delete.failed", &[("e", &error)]),
+                        now + 14.0,
+                    ));
+                }
+            }
+        }
+    }
+
+    fn remove_photo(&mut self, path: &Path) {
+        let Some(position) = self.photos.iter().position(|photo| photo.path == path) else {
+            return;
+        };
+        self.photos.remove(position);
+        self.decoder = Decoder::spawn();
+        self.textures.clear();
+        self.failed.clear();
+        self.exif_cache.clear();
+        self.exif_rx = None;
+        self.focus_cache.clear();
+        self.focus_rx = None;
+        self.index = if self.photos.is_empty() {
+            0
+        } else {
+            position.min(self.photos.len() - 1)
+        };
+        self.shown = self.index;
+        self.has_shown = false;
+        self.fit = true;
+        self.pan = Vec2::ZERO;
+        self.zoom = 1.0;
+        self.last_scale = 0.0;
+        self.error = None;
+        self.slideshow_active = false;
+        self.slideshow_paused = false;
+        self.slideshow_next = None;
+        self.hint_until = 0.0;
+        self.delete_path = None;
     }
 
     fn open_path(&mut self, path: &Path) {        // A network path such as \\server\share often cannot be probed with
@@ -761,6 +849,7 @@ impl BladrApp {
             about: i.key_pressed(Key::F1),
             options: i.key_pressed(Key::F2),
             focus_toggle: i.key_pressed(Key::F3),
+            delete: i.key_pressed(Key::Delete),
             toggle_language: i.key_pressed(Key::L) && i.modifiers.alt,
             dropped: i
                 .raw
@@ -782,6 +871,23 @@ impl BladrApp {
         // While the path prompt is open, its own text field owns the keyboard.
         if self.path_prompt.is_some() {
             return;
+        }
+
+        if self.delete_open {
+            if snap.escape && !self.delete_busy {
+                self.delete_open = false;
+                self.delete_path = None;
+            }
+            return;
+        }
+
+        if snap.delete
+            && !self.photos.is_empty()
+            && !self.options_open
+            && !self.about_open
+            && self.update_available.is_none()
+        {
+            self.request_delete();
         }
 
         if self.update_available.is_some() {
@@ -1188,6 +1294,10 @@ impl BladrApp {
                                     ui.close_menu();
                                 }
                             });
+                            if ui.button(i18n::tr(lang, "menu.delete")).clicked() {
+                                self.request_delete();
+                                ui.close_menu();
+                            }
                             ui.separator();
                             if ui.button(i18n::tr(lang, "menu.open_folder")).clicked() {
                                 self.pick_folder();
@@ -1643,6 +1753,7 @@ impl BladrApp {
         self.draw_options(ctx);
         self.draw_update(ctx);
         self.draw_path_prompt(ctx);
+        self.draw_delete(ctx);
     }
 
     fn draw_slideshow_bar(&mut self, ctx: &egui::Context, now: f64) {
@@ -1760,6 +1871,107 @@ impl BladrApp {
             self.slideshow_active = false;
             self.slideshow_paused = false;
             self.slideshow_next = None;
+        }
+    }
+
+    fn draw_delete(&mut self, ctx: &egui::Context) {
+        if !self.delete_open {
+            return;
+        }
+        let Some(path) = self.delete_path.clone() else {
+            self.delete_open = false;
+            return;
+        };
+        let lang = self.lang;
+        let name = path
+            .file_name()
+            .and_then(|value| value.to_str())
+            .unwrap_or("")
+            .to_owned();
+        let screen = ctx.screen_rect();
+        let width = 500.0;
+        let mut confirm = false;
+        let mut cancel = false;
+
+        egui::Area::new(Id::new("delete-confirm"))
+            .order(egui::Order::Tooltip)
+            .fixed_pos(Pos2::new(
+                screen.center().x - width * 0.5,
+                screen.center().y - 120.0,
+            ))
+            .show(ctx, |ui| {
+                ui.set_width(width);
+                egui::Frame::NONE
+                    .fill(Color32::from_rgb(25, 27, 33))
+                    .stroke(Stroke::new(1.0_f32, Color32::from_rgb(72, 76, 86)))
+                    .corner_radius(CornerRadius::same(14))
+                    .inner_margin(Margin::symmetric(22, 18))
+                    .show(ui, |ui| {
+                        ui.set_min_width(width - 44.0);
+                        ui.label(
+                            RichText::new(i18n::tr(lang, "delete.title"))
+                                .size(19.0)
+                                .strong()
+                                .color(Color32::WHITE),
+                        );
+                        ui.add_space(10.0);
+                        ui.label(
+                            RichText::new(i18n::tf(
+                                lang,
+                                "delete.warning",
+                                &[("name", &name)],
+                            ))
+                            .size(13.0)
+                            .color(Color32::from_gray(205)),
+                        );
+                        ui.add_space(16.0);
+                        if self.delete_busy {
+                            ui.horizontal(|ui| {
+                                ui.spinner();
+                                ui.label(
+                                    RichText::new(i18n::tr(lang, "delete.busy"))
+                                        .size(12.0)
+                                        .color(Color32::from_gray(180)),
+                                );
+                            });
+                        } else {
+                            ui.horizontal(|ui| {
+                                if ui
+                                    .add(
+                                        egui::Button::new(
+                                            RichText::new(i18n::tr(lang, "delete.cancel"))
+                                                .size(13.0),
+                                        )
+                                        .min_size(Vec2::new(100.0, 32.0)),
+                                    )
+                                    .clicked()
+                                {
+                                    cancel = true;
+                                }
+                                if ui
+                                    .add(
+                                        egui::Button::new(
+                                            RichText::new(i18n::tr(lang, "delete.confirm"))
+                                                .size(13.0)
+                                                .color(Color32::from_rgb(255, 205, 200)),
+                                        )
+                                        .fill(Color32::from_rgb(125, 35, 35))
+                                        .min_size(Vec2::new(120.0, 32.0)),
+                                    )
+                                    .clicked()
+                                {
+                                    confirm = true;
+                                }
+                            });
+                        }
+                    });
+            });
+
+        if cancel {
+            self.delete_open = false;
+            self.delete_path = None;
+        } else if confirm {
+            self.confirm_delete();
         }
     }
 
@@ -2412,6 +2624,7 @@ impl eframe::App for BladrApp {
         self.poll_exif();
         self.poll_focus();
         self.poll_wallpaper(snap.time);
+        self.poll_delete(snap.time);
         self.poll_incoming(ctx);
         self.handle_input(ctx, rect, &snap);
         self.prefetch();
