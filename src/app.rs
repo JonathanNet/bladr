@@ -11,6 +11,7 @@ use eframe::egui::{
 };
 
 use crate::decode::{DecodeEvent, Decoder};
+use crate::i18n::{self, Lang};
 use crate::library::{self, Photo};
 
 const HUD_IDLE_SECS: f64 = 2.6;
@@ -57,6 +58,7 @@ struct Snapshot {
     open_file: bool,
     open_path_prompt: bool,
     about: bool,
+    toggle_language: bool,
     dropped: Vec<PathBuf>,
     hovered_files: bool,
     pointer: Option<Pos2>,
@@ -96,6 +98,7 @@ pub struct BladrApp {
     last_wheel: f64,
     error: Option<(String, f64)>,
     title: String,
+    lang: Lang,
     hint_scheduled: bool,
 
     scan: Option<ScanJob>,
@@ -116,6 +119,9 @@ impl BladrApp {
         visuals.window_fill = Color32::from_rgb(16, 18, 22);
         visuals.override_text_color = Some(Color32::from_rgb(225, 228, 233));
         cc.egui_ctx.set_visuals(visuals);
+
+        let lang = Lang::initial();
+        i18n::set_decoder_lang(lang);
 
         let mut app = Self {
             folder: None,
@@ -143,6 +149,7 @@ impl BladrApp {
             last_wheel: 0.0,
             error: None,
             title: "Bladr".to_owned(),
+            lang,
             hint_scheduled: false,
             scan: None,
             path_prompt: None,
@@ -163,8 +170,17 @@ impl BladrApp {
         app
     }
 
-    fn open_path(&mut self, path: &Path) {
-        // A network path such as \\server\share often cannot be probed with
+    fn set_language(&mut self, lang: Lang) {
+        if self.lang == lang {
+            return;
+        }
+        self.lang = lang;
+        i18n::set_decoder_lang(lang);
+        i18n::save(lang);
+        self.error = None;
+    }
+
+    fn open_path(&mut self, path: &Path) {        // A network path such as \\server\share often cannot be probed with
         // `is_dir` before the share is authenticated, so treat anything
         // without a file extension (or with a trailing separator) as a folder.
         let text = path.to_string_lossy();
@@ -183,10 +199,11 @@ impl BladrApp {
         let focus = focus.map(Path::to_path_buf);
         let (tx, rx) = mpsc::channel();
         let scan_dir = dir.clone();
+        let lang = self.lang;
 
         std::thread::spawn(move || {
             let result = library::scan_folder(&scan_dir)
-                .map_err(|err| library::describe_scan_error(&scan_dir, &err));
+                .map_err(|err| library::describe_scan_error(&scan_dir, &err, lang));
             let _ = tx.send(result);
         });
 
@@ -212,7 +229,7 @@ impl BladrApp {
             Err(TryRecvError::Empty) => {}
             Err(TryRecvError::Disconnected) => {
                 self.scan = None;
-                self.error = Some(("Scanningen blev afbrudt.".to_owned(), now + 6.0));
+                self.error = Some((i18n::tr(self.lang, "scan.interrupted").to_owned(), now + 6.0));
             }
         }
     }
@@ -252,7 +269,7 @@ impl BladrApp {
         let trimmed = text.trim().trim_matches('"');
         if trimmed.is_empty() {
             self.path_prompt = Some(text);
-            self.path_prompt_error = "Skriv en sti først.".to_owned();
+            self.path_prompt_error = i18n::tr(self.lang, "path.empty_error").to_owned();
             return;
         }
         self.open_path(Path::new(trimmed));
@@ -266,7 +283,7 @@ impl BladrApp {
                 self.index + 1,
                 self.photos.len()
             ),
-            None => "Bladr — billedfremviser".to_owned(),
+            None => format!("Bladr — {}", i18n::tr(self.lang, "app.subtitle")),
         }
     }
 
@@ -469,6 +486,7 @@ impl BladrApp {
             open_file: i.key_pressed(Key::O) && (i.modifiers.ctrl || i.modifiers.command),
             open_path_prompt: i.key_pressed(Key::L) && (i.modifiers.ctrl || i.modifiers.command),
             about: i.key_pressed(Key::F1),
+            toggle_language: i.key_pressed(Key::L) && i.modifiers.alt,
             dropped: i
                 .raw
                 .dropped_files
@@ -501,6 +519,16 @@ impl BladrApp {
         if snap.about {
             self.about_open = true;
             return;
+        }
+
+        if snap.toggle_language {
+            let next = if self.lang == Lang::Da {
+                Lang::En
+            } else {
+                Lang::Da
+            };
+            self.set_language(next);
+            self.last_activity = now;
         }
 
         if !snap.dropped.is_empty() {
@@ -657,7 +685,7 @@ impl BladrApp {
 
     fn pick_folder(&mut self) {
         if let Some(dir) = rfd::FileDialog::new()
-            .set_title("Åbn mappe")
+            .set_title(i18n::tr(self.lang, "dialog.open_folder"))
             .pick_folder()
         {
             self.load_folder(&dir, None);
@@ -666,8 +694,8 @@ impl BladrApp {
 
     fn pick_file(&mut self) {
         if let Some(file) = rfd::FileDialog::new()
-            .set_title("Åbn billede")
-            .add_filter("Billeder", library::SUPPORTED_EXTENSIONS)
+            .set_title(i18n::tr(self.lang, "dialog.open_image"))
+            .add_filter(i18n::tr(self.lang, "dialog.images"), library::SUPPORTED_EXTENSIONS)
             .pick_file()
         {
             self.open_path(&file);
@@ -739,41 +767,50 @@ impl BladrApp {
                     }
 
                     if !self.fullscreen {
+                        let lang = self.lang;
                         response.context_menu(|ui| {
-                            if ui.button("Fuldskærm        F").clicked() {
+                            if ui.button(i18n::tr(lang, "menu.fullscreen")).clicked() {
                                 self.toggle_fullscreen(ctx, snap.time);
                                 ui.close_menu();
                             }
-                            if ui.button("Tilpas i vinduet    0").clicked() {
+                            if ui.button(i18n::tr(lang, "menu.fit")).clicked() {
                                 self.fit = true;
                                 self.pan = Vec2::ZERO;
                                 ui.close_menu();
                             }
-                            if ui.button("Faktisk størrelse    1").clicked() {
+                            if ui.button(i18n::tr(lang, "menu.actual")).clicked() {
                                 self.fit = false;
                                 self.zoom = 1.0 / ctx.pixels_per_point();
                                 self.pan = Vec2::ZERO;
                                 ui.close_menu();
                             }
                             ui.separator();
-                            if ui.button("Åbn mappe…        O").clicked() {
+                            if ui.button(i18n::tr(lang, "menu.open_folder")).clicked() {
                                 self.pick_folder();
                                 ui.close_menu();
                             }
-                            if ui.button("Åbn billede…    Ctrl+O").clicked() {
+                            if ui.button(i18n::tr(lang, "menu.open_file")).clicked() {
                                 self.pick_file();
                                 ui.close_menu();
                             }
-                            if ui.button("Åbn sti…        Ctrl+L").clicked() {
+                            if ui.button(i18n::tr(lang, "menu.open_path")).clicked() {
                                 self.open_path_prompt();
                                 ui.close_menu();
                             }
                             ui.separator();
-                            if ui.button("Om Bladr…    F1").clicked() {
+                            ui.menu_button(i18n::tr(lang, "menu.language"), |ui| {
+                                for choice in Lang::ALL {
+                                    if ui.radio(self.lang == choice, choice.label()).clicked() {
+                                        self.set_language(choice);
+                                        ui.close_menu();
+                                    }
+                                }
+                            });
+                            if ui.button(i18n::tr(lang, "menu.about")).clicked() {
                                 self.about_open = true;
                                 ui.close_menu();
                             }
-                            if ui.button("Luk    Esc").clicked() {
+                            if ui.button(i18n::tr(lang, "menu.close")).clicked() {
                                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                             }
                         });
@@ -784,7 +821,7 @@ impl BladrApp {
                     ui.painter().text(
                         rect.center(),
                         Align2::CENTER_CENTER,
-                        "Indlæser…",
+                        i18n::tr(self.lang, "overlay.loading"),
                         FontId::proportional(15.0),
                         Color32::from_gray(150),
                     );
@@ -837,6 +874,7 @@ impl BladrApp {
         if self.photos.is_empty() {
             return;
         }
+        let lang = self.lang;
         let active = self.hud_pinned
             || snap.time - self.last_activity < HUD_IDLE_SECS
             || self.slideshow_next.is_some();
@@ -855,11 +893,10 @@ impl BladrApp {
             .textures
             .get(&self.index)
             .map(|t| {
-                if t.raw {
-                    format!("RAW · {} × {}", t.source[0], t.source[1])
-                } else {
-                    format!("{} × {}", t.source[0], t.source[1])
-                }
+                let w = t.source[0].to_string();
+                let h = t.source[1].to_string();
+                let key = if t.raw { "hud.raw_dims" } else { "hud.dims" };
+                i18n::tf(lang, key, &[("w", &w), ("h", &h)])
             })
             .unwrap_or_else(|| "…".to_owned());
         let size = library::human_size(photo.size);
@@ -917,7 +954,7 @@ impl BladrApp {
                         ui.horizontal(|ui| {
                             if slideshow {
                                 ui.label(
-                                    RichText::new("AUTO")
+                                    RichText::new(i18n::tr(lang, "hud.auto"))
                                         .size(11.0)
                                         .strong()
                                         .color(Color32::from_rgb(110, 190, 255)),
@@ -938,14 +975,16 @@ impl BladrApp {
             self.zoom
         };
         let percent = (scale * ppp * 100.0).round() as i32;
+        let p = percent.to_string();
         if self.fit {
-            format!("Tilpas · {percent}%")
+            i18n::tf(self.lang, "hud.zoom_fit", &[("p", &p)])
         } else {
-            format!("{percent}%")
+            i18n::tf(self.lang, "hud.zoom_actual", &[("p", &p)])
         }
     }
 
     fn draw_overlays(&mut self, ctx: &egui::Context, snap: &Snapshot) {
+        let lang = self.lang;
         let now = snap.time;
         if !self.hint_scheduled {
             self.hint_scheduled = true;
@@ -973,7 +1012,7 @@ impl BladrApp {
                             ui.set_min_width(w - 44.0);
                             ui.vertical_centered(|ui| {
                                 ui.label(
-                                    RichText::new("Slip for at åbne")
+                                    RichText::new(i18n::tr(lang, "overlay.drop"))
                                         .size(18.0)
                                         .strong()
                                         .color(Color32::WHITE),
@@ -1000,9 +1039,7 @@ impl BladrApp {
                             ui.set_min_width(w - 28.0);
                             ui.vertical_centered(|ui| {
                                 ui.label(
-                                    RichText::new(
-                                        "Rul for at bladre   ·   F fuld skærm   ·   Esc luk",
-                                    )
+                                    RichText::new(i18n::tr(lang, "overlay.hint"))
                                     .size(12.0)
                                     .color(Color32::from_rgba_unmultiplied(
                                         210,
@@ -1041,7 +1078,7 @@ impl BladrApp {
                                         .color(Color32::from_gray(190)),
                                 );
                                 ui.label(
-                                    RichText::new("Indlæser…")
+                                    RichText::new(i18n::tr(lang, "overlay.loading"))
                                         .size(12.0)
                                         .color(Color32::from_gray(205)),
                                 );
@@ -1087,6 +1124,7 @@ impl BladrApp {
         if !self.about_open {
             return;
         }
+        let lang = self.lang;
 
         let w = 470.0;
         let screen = ctx.screen_rect();
@@ -1114,33 +1152,34 @@ impl BladrApp {
                                     .color(Color32::from_rgb(240, 243, 247)),
                             );
                             ui.label(
-                                RichText::new(format!(
-                                    "v{}   ·   hurtig billedfremviser",
-                                    env!("CARGO_PKG_VERSION")
+                                RichText::new(i18n::tf(
+                                    lang,
+                                    "about.version",
+                                    &[
+                                        ("version", env!("CARGO_PKG_VERSION")),
+                                        ("subtitle", i18n::tr(lang, "app.subtitle")),
+                                    ],
                                 ))
                                 .size(13.0)
                                 .color(Color32::from_rgb(120, 190, 255)),
                             );
                             ui.add_space(16.0);
                             ui.label(
-                                RichText::new(
-                                    "JPEG · PNG · WebP · TIFF · RAW (CR3, NEF, ARW, DNG)\n\
-                                     Fuldskærm, musens rullehjul og auto-afspilning.",
-                                )
+                                RichText::new(i18n::tr(lang, "about.formats"))
                                 .size(12.0)
                                 .line_height(Some(19.0))
                                 .color(Color32::from_gray(160)),
                             );
                             ui.add_space(14.0);
                             ui.label(
-                                RichText::new("© 2026 · MIT-licens")
+                                RichText::new(i18n::tr(lang, "about.license"))
                                     .size(11.0)
                                     .color(Color32::from_gray(120)),
                             );
                             ui.add_space(16.0);
                             if ui
                                 .add(
-                                    egui::Button::new(RichText::new("Luk").size(14.0))
+                                    egui::Button::new(RichText::new(i18n::tr(lang, "app.close")).size(14.0))
                                         .min_size(Vec2::new(120.0, 34.0))
                                         .corner_radius(CornerRadius::same(8)),
                                 )
@@ -1161,6 +1200,7 @@ impl BladrApp {
         let Some(job) = self.scan.as_ref() else {
             return;
         };
+        let lang = self.lang;
         let path = short_folder(&job.dir);
         let network = job.dir.to_string_lossy().starts_with("\\\\");
         let w = 460.0;
@@ -1189,9 +1229,9 @@ impl BladrApp {
                             );
                             ui.label(
                                 RichText::new(if network {
-                                    "Åbner netværksmappe…"
+                                    i18n::tr(lang, "scan.network")
                                 } else {
-                                    "Åbner mappe…"
+                                    i18n::tr(lang, "scan.local")
                                 })
                                 .size(15.0)
                                 .strong(),
@@ -1206,15 +1246,13 @@ impl BladrApp {
                         if network {
                             ui.add_space(4.0);
                             ui.label(
-                                RichText::new(
-                                    "Netværksdrev kan tage flere sekunder, hvis delingen sover.",
-                                )
+                                RichText::new(i18n::tr(lang, "scan.network_hint"))
                                 .size(11.0)
                                 .color(Color32::from_gray(135)),
                             );
                         }
                         ui.add_space(12.0);
-                        if ui.button("Annuller").clicked() {
+                        if ui.button(i18n::tr(lang, "scan.cancel")).clicked() {
                             cancel = true;
                         }
                     });
@@ -1231,6 +1269,7 @@ impl BladrApp {
         if self.path_prompt.is_none() {
             return;
         }
+        let lang = self.lang;
 
         let w = 580.0;
         let screen = ctx.screen_rect();
@@ -1256,11 +1295,11 @@ impl BladrApp {
                     .inner_margin(Margin::same(22))
                     .show(ui, |ui| {
                         ui.set_min_width(w - 44.0);
-                        ui.label(RichText::new("Åbn sti eller netværksmappe").size(18.0).strong());
+                        ui.label(RichText::new(i18n::tr(lang, "path.title")).size(18.0).strong());
                         ui.add_space(4.0);
                         ui.label(
                             RichText::new(
-                                "Indsæt fx  \\\\server\\share\\mappe  eller en mapped drive som  Y:\\foto",
+                                i18n::tr(lang, "path.help"),
                             )
                             .size(12.0)
                             .color(Color32::from_gray(150)),
@@ -1288,15 +1327,15 @@ impl BladrApp {
 
                         ui.add_space(10.0);
                         ui.horizontal(|ui| {
-                            if ui.button("Åbn").clicked() {
+                            if ui.button(i18n::tr(lang, "path.open")).clicked() {
                                 submit = true;
                             }
-                            if ui.button("Annuller").clicked() {
+                            if ui.button(i18n::tr(lang, "path.cancel")).clicked() {
                                 cancel = true;
                             }
                             ui.add_space(8.0);
                             ui.label(
-                                RichText::new("Enter = åbn   ·   Esc = annuller")
+                                RichText::new(i18n::tr(lang, "path.footer"))
                                     .size(11.0)
                                     .color(Color32::from_gray(125)),
                             );
@@ -1323,6 +1362,7 @@ impl BladrApp {
 
     fn draw_empty_state(&mut self, ctx: &egui::Context) {
         let has_folder = self.folder.is_some();
+        let lang = self.lang;
         let screen = ctx.screen_rect();
         let w = 460.0;
         egui::Area::new(Id::new("empty"))
@@ -1347,9 +1387,9 @@ impl BladrApp {
                                     .color(Color32::from_rgb(240, 243, 247)),
                             );
                             let subtitle = if has_folder {
-                                "Ingen billeder i denne mappe"
+                                i18n::tr(lang, "empty.no_images")
                             } else {
-                                "En hurtig billedfremviser"
+                                i18n::tr(lang, "empty.subtitle")
                             };
                             ui.label(
                                 RichText::new(format!(
@@ -1367,26 +1407,21 @@ impl BladrApp {
                                     .corner_radius(CornerRadius::same(9))
                             };
 
-                            if ui.add(button("Åbn mappe  (O)")).clicked() {
+                            if ui.add(button(i18n::tr(lang, "empty.open_folder"))).clicked() {
                                 self.pick_folder();
                             }
                             ui.add_space(8.0);
-                            if ui.add(button("Åbn billede  (Ctrl+O)")).clicked() {
+                            if ui.add(button(i18n::tr(lang, "empty.open_image"))).clicked() {
                                 self.pick_file();
                             }
                             ui.add_space(8.0);
-                            if ui.add(button("Åbn sti / netværk  (Ctrl+L)")).clicked() {
+                            if ui.add(button(i18n::tr(lang, "empty.open_path"))).clicked() {
                                 self.open_path_prompt();
                             }
 
                             ui.add_space(22.0);
                             ui.label(
-                                RichText::new(
-                                    "Rul med musen for at bladre\n\
-                                     Piletaster skifter billede   ·   F fuld skærm\n\
-                                     + - zoom   ·   0 tilpas   ·   1 faktisk størrelse\n\
-                                     Mellemrum starter auto-afspilning",
-                                )
+                                RichText::new(i18n::tr(lang, "empty.hint"))
                                 .size(12.0)
                                 .line_height(Some(20.0))
                                 .color(Color32::from_gray(130)),

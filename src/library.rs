@@ -5,6 +5,8 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
+use crate::i18n::{self, Lang};
+
 /// Extensions the bundled `image` codecs can decode, plus the RAW containers
 /// that are shown through their embedded JPEG preview.
 pub const SUPPORTED_EXTENSIONS: &[&str] = &[
@@ -105,21 +107,24 @@ fn normalise_path(path: &Path) -> String {
 
 /// Turn a raw `io::Error` into a message that is useful when a network share
 /// is involved. Windows error 5/1326 is by far the most common one here.
-pub fn describe_scan_error(dir: &Path, err: &io::Error) -> String {
-    let mut message = format!("Kunne ikke åbne \"{}\":\n{}", dir.display(), err);
-    match err.raw_os_error() {
-        Some(5) | Some(1326) => message.push_str(
-            "\n\nAdgang nægtet. Kontrollér at delingen findes, at du er logget på, \
-             og at stien kan åbnes i Stifinder. Prøv eventuelt et mapped drev (fx Y:\\foto) \
-             eller åbn stien med Ctrl+L.",
-        ),
-        Some(53) | Some(67) | Some(3) => message.push_str(
-            "\n\nStien findes ikke. Kontrollér delingens navn – fx \\\\server\\share\\mappe.",
-        ),
-        Some(64) => message.push_str("\n\nNetværksforbindelsen blev afbrudt."),
-        Some(1231) => message.push_str("\n\nNetværket er ikke tilgængeligt."),
-        _ => message.push_str("\n\nTip: en netværkssti kan indtastes direkte med Ctrl+L."),
-    }
+pub fn describe_scan_error(dir: &Path, err: &io::Error, lang: Lang) -> String {
+    let mut message = i18n::tf(
+        lang,
+        "scan.open_failed",
+        &[
+            ("path", &dir.display().to_string()),
+            ("error", &err.to_string()),
+        ],
+    );
+    let suffix = match err.raw_os_error() {
+        Some(5) | Some(1326) => i18n::tr(lang, "scan.denied"),
+        Some(53) | Some(67) | Some(3) => i18n::tr(lang, "scan.not_found"),
+        Some(64) => i18n::tr(lang, "scan.aborted"),
+        Some(1231) => i18n::tr(lang, "scan.unavailable"),
+        _ => i18n::tr(lang, "scan.tip"),
+    };
+    message.push_str("\n\n");
+    message.push_str(suffix);
     message
 }
 

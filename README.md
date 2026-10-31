@@ -11,6 +11,16 @@ Bladr er et selvstændigt program og indeholder ingen kode fra ACDSee.
 Den nyeste Windows-version ligger som **`Bladr.exe`** under **Releases** på
 GitHub. Det er en enkelt selvstændig fil — ingen installation nødvendig.
 
+## Sprog / Language
+
+Bladr starter på **Windows' displaysprog**: dansk hvis systemet er dansk,
+ellers engelsk. Sproget kan skiftes med **`Alt+L`** eller **højreklik → Sprog**,
+og valget gemmes i `%APPDATA%\Bladr\language.txt`.
+
+- `BLADR_LANG=en` eller `BLADR_LANG=da` tvinger et sprog ved opstart.
+- Nye sprog tilføjes som en tabel i [`src/i18n.rs`](src/i18n.rs); manglende
+  nøgler falder tilbage til engelsk.
+
 ## Funktioner
 
 - **Rul med musen** skifter til næste/forrige billede i samme mappe (og wrapper
@@ -29,6 +39,8 @@ GitHub. Det er en enkelt selvstændig fil — ingen installation nødvendig.
 - Husker sidste mappe i `%APPDATA%\Bladr\last_folder.txt`.
 - Starter **maksimeret**, og har en **Om-dialog** (`F1` eller højrekliksmenuen)
   med versionsnummer.
+- **Sprog:** følger Windows (dansk/engelsk), skiftes med `Alt+L` eller
+  højreklik → Sprog, og huskes i `%APPDATA%\Bladr\language.txt`.
 - Understøttede formater: JPEG, PNG, GIF, BMP, WebP, TIFF, ICO, TGA, DDS, HDR,
   PNM, QOI og Farbfeld — samt RAW via kameraets indlejrede JPEG-forhåndsvisning
   (CR3, NEF, CR2, ARW, DNG, ORF, RW2, RAF m.fl.).
@@ -49,6 +61,7 @@ GitHub. Det er en enkelt selvstændig fil — ingen installation nødvendig.
 | Panorér | Træk med musen (når zoomet ind) |
 | Auto-afspilning | `Mellemrum` |
 | Vis/skjul HUD permanent | `I` |
+| Skift sprog (dansk/engelsk) | `Alt+L` |
 | Om-dialog | `F1` eller højreklik → Om Bladr… |
 | Menu (fuldskærm, zoom, åbn, luk) | Højreklik i vinduestilstand |
 | Åbn mappe / fil | `O` / `Ctrl+O` |

@@ -21,6 +21,8 @@ use image::imageops::FilterType;
 use image::metadata::Orientation;
 use image::{DynamicImage, ImageDecoder, ImageReader};
 
+use crate::i18n::{self, Lang};
+
 /// Cap the GPU texture so a 100 MP scan does not allocate a 400 MB surface.
 /// The full resolution is still reported in the info bar.
 const MAX_TEXTURE_SIDE: u32 = 4096;
@@ -133,7 +135,7 @@ fn worker(jobs: Receiver<Job>, events: Sender<DecodeEvent>, shared: Arc<Mutex<Sh
             continue;
         }
 
-        let result = decode(&job.path);
+        let result = decode(&job.path, i18n::decoder_lang());
 
         if let Ok(mut s) = shared.lock() {
             s.inflight.remove(&job.index);
@@ -155,7 +157,7 @@ fn worker(jobs: Receiver<Job>, events: Sender<DecodeEvent>, shared: Arc<Mutex<Sh
     }
 }
 
-fn decode(path: &Path) -> Result<Decoded, String> {
+fn decode(path: &Path, lang: Lang) -> Result<Decoded, String> {
     let extension = path
         .extension()
         .and_then(|e| e.to_str())
@@ -177,16 +179,11 @@ fn decode(path: &Path) -> Result<Decoded, String> {
                     return finish(tiff_image.expect("tiff image"), true);
                 }
 
-                return match decode_raw_preview_data(&data) {
+                return match decode_raw_preview_data(&data, lang) {
                     Ok(decoded) => Ok(decoded),
                     Err(error) => {
                         if crate::tiff::uses_jpeg_xl(&data) {
-                            return Err(
-                                "Denne DNG er JPEG XL-komprimeret (DNG 1.7, typisk DxO PureRAW). \
-                                 Bladr kan ikke afkode JPEG XL endnu. Eksportér DNG'en uden \
-                                 komprimering, eller gem den som TIFF/JPEG."
-                                    .to_owned(),
-                            );
+                            return Err(i18n::tr(lang, "decode.jpeg_xl").to_owned());
                         }
                         match tiff_image {
                             Some(image) => finish(image, true),
@@ -196,10 +193,10 @@ fn decode(path: &Path) -> Result<Decoded, String> {
                 };
             }
         }
-        return decode_raw_preview(path);
+        return decode_raw_preview(path, lang);
     }
 
-    match decode_regular(path) {
+    match decode_regular(path, lang) {
         Ok(decoded) => Ok(decoded),
         Err(error) => {
             // Some 16-bit RGB TIFFs are not handled by the image crate. The
@@ -223,15 +220,15 @@ pub fn is_raw_path(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
-fn decode_regular(path: &Path) -> Result<Decoded, String> {
+fn decode_regular(path: &Path, lang: Lang) -> Result<Decoded, String> {
     let reader = ImageReader::open(path)
-        .map_err(|e| format!("kunne ikke åbne filen: {e}"))?
+        .map_err(|e| i18n::tf(lang, "decode.open", &[("e", &e.to_string())]))?
         .with_guessed_format()
-        .map_err(|e| format!("ukendt billedformat: {e}"))?;
+        .map_err(|e| i18n::tf(lang, "decode.format", &[("e", &e.to_string())]))?;
 
     let mut decoder = reader
         .into_decoder()
-        .map_err(|e| format!("kunne ikke læse billedet: {e}"))?;
+        .map_err(|e| i18n::tf(lang, "decode.read", &[("e", &e.to_string())]))?;
 
     // Cameras store the sensor orientation in EXIF; honour it or every
     // portrait shot opens sideways.
@@ -240,7 +237,7 @@ fn decode_regular(path: &Path) -> Result<Decoded, String> {
         .unwrap_or(Orientation::NoTransforms);
 
     let mut image = DynamicImage::from_decoder(decoder)
-        .map_err(|e| format!("kunne ikke afkode billedet: {e}"))?;
+        .map_err(|e| i18n::tf(lang, "decode.decode", &[("e", &e.to_string())]))?;
     image.apply_orientation(orientation);
 
     finish(image, false)
@@ -273,19 +270,16 @@ fn finish(mut image: DynamicImage, raw: bool) -> Result<Decoded, String> {
 /// This is a viewer, not a converter: the preview is what the camera itself
 /// wrote, so no demosaicing or colour profile work is attempted. Canon CR3 and
 /// Nikon NEF both normally carry a full-resolution JPEG.
-fn decode_raw_preview(path: &Path) -> Result<Decoded, String> {
-    let data = fs::read(path).map_err(|e| format!("kunne ikke læse RAW-filen: {e}"))?;
-    decode_raw_preview_data(&data)
+fn decode_raw_preview(path: &Path, lang: Lang) -> Result<Decoded, String> {
+    let data = fs::read(path)
+        .map_err(|e| i18n::tf(lang, "decode.read_raw", &[("e", &e.to_string())]))?;
+    decode_raw_preview_data(&data, lang)
 }
 
-fn decode_raw_preview_data(data: &[u8]) -> Result<Decoded, String> {
+fn decode_raw_preview_data(data: &[u8], lang: Lang) -> Result<Decoded, String> {
     let candidates = jpeg_previews(data);
     if candidates.is_empty() {
-        return Err(
-            "Filen indeholder hverken et læsbart RGB-lag eller en JPEG-forhåndsvisning, \
-             som Bladr kan vise. DNG'er med CFA-data skal have en indlejret preview."
-                .to_owned(),
-        );
+        return Err(i18n::tr(lang, "decode.no_preview").to_owned());
     }
 
     // Rank by decoded dimensions, not byte length. RAW containers also contain
@@ -315,9 +309,10 @@ fn decode_raw_preview_data(data: &[u8]) -> Result<Decoded, String> {
     }
 
     let Some((_, mut image, preview_orientation)) = best else {
-        return Err(format!(
-            "JPEG-forhåndsvisningen i filen kunne ikke afkodes ({candidate_count} kandidater). \
-             Filen kan bruge en RAW-komprimering, som Bladr ikke understøtter."
+        return Err(i18n::tf(
+            lang,
+            "decode.preview_fail",
+            &[("n", &candidate_count.to_string())],
         ));
     };
 

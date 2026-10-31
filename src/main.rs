@@ -6,6 +6,7 @@
 
 mod app;
 mod decode;
+mod i18n;
 mod library;
 mod tiff;
 
@@ -16,14 +17,15 @@ use eframe::egui;
 fn main() -> eframe::Result {
     let mut initial: Option<PathBuf> = None;
     let mut start_fullscreen = false;
+    let lang = i18n::Lang::initial();
 
     for arg in std::env::args().skip(1) {
         match arg.as_str() {
             "--fullscreen" | "-f" => start_fullscreen = true,
             "--help" | "-h" => {
-                println!("Bladr - billedfremviser");
+                println!("{}", i18n::tr(lang, "cli.title"));
                 println!();
-                println!("Brug: bladr [mappe eller billede] [--fullscreen]");
+                println!("{}", i18n::tr(lang, "cli.usage"));
                 return Ok(());
             }
             other if other.starts_with('-') => {}
@@ -33,7 +35,10 @@ fn main() -> eframe::Result {
 
     if let Some(path) = &initial {
         if !path.exists() {
-            eprintln!("Findes ikke: {}", path.display());
+            eprintln!(
+                "{}",
+                i18n::tf(lang, "cli.not_found", &[("path", &path.display().to_string())])
+            );
             initial = None;
         }
     }
