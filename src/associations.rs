@@ -16,6 +16,7 @@ const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 const SW_SHOWNORMAL: i32 = 1;
 
 const PROG_ID: &str = "Bladr.Image";
+const ASSOCSTR_EXECUTABLE: u32 = 2;
 const EXTENSIONS: &[&str] = &[
     "jpg", "jpeg", "png", "gif", "bmp", "tif", "tiff", "webp", "heic", "heif",
 ];
@@ -83,9 +84,53 @@ pub fn register() -> Result<(), String> {
     Ok(())
 }
 
-/// True when Bladr owns a normal JPG or PNG association.
+/// True when Windows currently opens any common image type with this Bladr.
 pub fn is_default() -> bool {
-    is_default_for(".jpg") || is_default_for(".png")
+    for extension in EXTENSIONS {
+        if handler_matches(extension) {
+            return true;
+        }
+    }
+    for extension in ["jpg", "jpeg", "png"] {
+        if is_default_for(&format!(".{extension}")) {
+            return true;
+        }
+    }
+    false
+}
+
+fn handler_matches(extension: &str) -> bool {
+    let extension = wide(&format!(".{extension}"));
+    let operation = wide("open");
+    let mut buffer = vec![0u16; 2048];
+    let mut length = buffer.len() as u32;
+    let result = unsafe {
+        AssocQueryStringW(
+            0,
+            ASSOCSTR_EXECUTABLE,
+            extension.as_ptr(),
+            operation.as_ptr(),
+            buffer.as_mut_ptr(),
+            &mut length,
+        )
+    };
+    if result != 0 {
+        return false;
+    }
+    let length = buffer
+        .iter()
+        .position(|value| *value == 0)
+        .unwrap_or(buffer.len());
+    let handler = String::from_utf16_lossy(&buffer[..length]);
+    let Ok(current) = std::env::current_exe() else {
+        return false;
+    };
+    let current = current.canonicalize().unwrap_or(current);
+    let handler = std::path::PathBuf::from(handler);
+    let handler = handler.canonicalize().unwrap_or(handler);
+    handler
+        .to_string_lossy()
+        .eq_ignore_ascii_case(&current.to_string_lossy())
 }
 
 fn is_default_for(extension: &str) -> bool {
@@ -103,7 +148,10 @@ fn is_default_for(extension: &str) -> bool {
     text.lines()
         .find(|line| line.contains("ProgId"))
         .and_then(|line| line.split_once("REG_SZ"))
-        .map(|(_, value)| value.trim().eq_ignore_ascii_case(PROG_ID))
+        .map(|(_, value)| {
+            let value = value.trim();
+            value.eq_ignore_ascii_case(PROG_ID) || value.to_ascii_lowercase().contains("bladr")
+        })
         .unwrap_or(false)
 }
 
@@ -252,4 +300,16 @@ extern "system" {
         directory: *const u16,
         show: i32,
     ) -> isize;
+}
+
+#[link(name = "shlwapi")]
+extern "system" {
+    fn AssocQueryStringW(
+        flags: u32,
+        string: u32,
+        association: *const u16,
+        extra: *const u16,
+        output: *mut u16,
+        length: *mut u32,
+    ) -> i32;
 }

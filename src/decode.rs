@@ -38,9 +38,12 @@ pub struct Job {
     pub path: PathBuf,
 }
 
+pub type Histogram = [[u32; 256]; 3];
+
 pub struct Decoded {
     pub index: usize,
     pub rgba: Vec<u8>,
+    pub histogram: Histogram,
     pub width: u32,
     pub height: u32,
     /// Dimensions after EXIF orientation, before the texture cap.
@@ -258,9 +261,17 @@ fn finish(mut image: DynamicImage, raw: bool) -> Result<Decoded, String> {
     let rgba_image = image.to_rgba8();
     let (width, height) = (rgba_image.width(), rgba_image.height());
 
+    let mut histogram: Histogram = [[0; 256]; 3];
+    for pixel in rgba_image.as_raw().chunks_exact(4) {
+        histogram[0][pixel[0] as usize] += 1;
+        histogram[1][pixel[1] as usize] += 1;
+        histogram[2][pixel[2] as usize] += 1;
+    }
+
     Ok(Decoded {
         index: 0, // filled in by the caller
         rgba: rgba_image.into_raw(),
+        histogram,
         width,
         height,
         source_width,

@@ -11,7 +11,7 @@ use eframe::egui::{
 };
 
 use crate::associations;
-use crate::decode::{DecodeEvent, Decoder};
+use crate::decode::{DecodeEvent, Decoder, Histogram};
 use crate::delete;
 use crate::exif::{self, ExifData};
 use crate::focus::{self, FocusData};
@@ -36,6 +36,8 @@ struct Tex {
     source: [u32; 2],
     /// EXIF orientation code applied to the pixels.
     orientation: u16,
+    /// RGB histograms of the decoded texture.
+    histogram: Histogram,
     /// True when the pixels are a RAW file's embedded preview.
     raw: bool,
 }
@@ -63,6 +65,7 @@ struct Snapshot {
     fit: bool,
     actual: bool,
     info: bool,
+    histogram: bool,
     open_folder: bool,
     open_file: bool,
     open_path_prompt: bool,
@@ -177,7 +180,9 @@ impl BladrApp {
         let start_fullscreen = start_fullscreen || settings.start_fullscreen;
         let _ = associations::register();
         let default_ok = associations::is_default();
-        let default_prompt_open = !settings.default_viewer_declined && !default_ok;
+        let default_prompt_open = !settings.default_viewer_declined
+            && settings::now_unix() >= settings.default_viewer_snooze
+            && !default_ok;
 
         let mut app = Self {
             folder: None,
@@ -466,7 +471,7 @@ impl BladrApp {
         if !self.options_open && !self.default_prompt_open {
             return;
         }
-        if now - self.default_status_at < 2.0 {
+        if now - self.default_status_at < 5.0 {
             return;
         }
         self.default_status_at = now;
@@ -479,6 +484,7 @@ impl BladrApp {
 
     fn choose_default_viewer(&mut self, now: f64) {
         self.settings.default_viewer_declined = false;
+        self.settings.default_viewer_snooze = 0;
         self.persist_settings();
         self.default_status_at = 0.0;
         if let Err(error) = associations::open_default_apps() {
@@ -803,6 +809,7 @@ impl BladrApp {
                         size: Vec2::new(decoded.width as f32, decoded.height as f32),
                         source: [decoded.source_width, decoded.source_height],
                         orientation: decoded.orientation,
+                        histogram: decoded.histogram,
                         raw: decoded.raw,
                     };
                     self.textures.insert(decoded.index, tex);
@@ -886,6 +893,7 @@ impl BladrApp {
             fit: i.key_pressed(Key::Num0),
             actual: i.key_pressed(Key::Num1),
             info: i.key_pressed(Key::I),
+            histogram: i.key_pressed(Key::H),
             open_folder: i.key_pressed(Key::O) && !i.modifiers.ctrl && !i.modifiers.command,
             open_file: i.key_pressed(Key::O) && (i.modifiers.ctrl || i.modifiers.command),
             open_path_prompt: i.key_pressed(Key::L) && (i.modifiers.ctrl || i.modifiers.command),
@@ -1058,6 +1066,12 @@ impl BladrApp {
             if self.exif_visible {
                 self.request_exif();
             }
+            self.last_activity = now;
+        }
+
+        if snap.histogram {
+            self.settings.histogram = !self.settings.histogram;
+            self.persist_settings();
             self.last_activity = now;
         }
 
@@ -1390,7 +1404,92 @@ impl BladrApp {
             });
 
         self.draw_hud(ctx, snap);
+        self.draw_histogram(ctx);
         self.draw_overlays(ctx, snap);
+    }
+
+    fn draw_histogram(&self, ctx: &egui::Context) {
+        if !self.settings.histogram {
+            return;
+        }
+        let Some((_, tex)) = self.displayed_tex() else {
+            return;
+        };
+        let histogram = tex.histogram;
+        let max = histogram
+            .iter()
+            .flat_map(|channel| channel.iter())
+            .copied()
+            .max()
+            .unwrap_or(0);
+        if max == 0 {
+            return;
+        }
+
+        let screen = ctx.screen_rect();
+        let width = 300.0;
+        let height = 150.0;
+        let mut points = [[Pos2::ZERO; 256]; 3];
+
+        egui::Area::new(Id::new("histogram"))
+            .order(egui::Order::Foreground)
+            .interactable(false)
+            .fixed_pos(Pos2::new(
+                screen.right() - width - 18.0,
+                screen.top() + 70.0,
+            ))
+            .show(ctx, |ui| {
+                ui.set_width(width);
+                egui::Frame::NONE
+                    .fill(Color32::from_rgba_unmultiplied(13, 15, 19, 225))
+                    .corner_radius(CornerRadius::same(10))
+                    .inner_margin(Margin::symmetric(12, 9))
+                    .show(ui, |ui| {
+                        ui.set_min_width(width - 24.0);
+                        ui.label(
+                            RichText::new(i18n::tr(self.lang, "histogram.title"))
+                                .size(11.0)
+                                .color(Color32::from_gray(180)),
+                        );
+                        let (rect, _) = ui.allocate_exact_size(
+                            Vec2::new(width - 24.0, height - 32.0),
+                            Sense::hover(),
+                        );
+                        let painter = ui.painter_at(rect);
+                        painter.rect_filled(rect, CornerRadius::same(4), Color32::from_gray(8));
+                        for step in 1..4 {
+                            let x = rect.left() + rect.width() * step as f32 / 4.0;
+                            painter.line_segment(
+                                [Pos2::new(x, rect.top()), Pos2::new(x, rect.bottom())],
+                                Stroke::new(0.6_f32, Color32::from_gray(38)),
+                            );
+                        }
+
+                        let denominator = (max as f32).ln_1p();
+                        for channel in 0..3 {
+                            for bin in 0..256 {
+                                let value = histogram[channel][bin];
+                                let level = if value == 0 {
+                                    0.0
+                                } else {
+                                    (value as f32).ln_1p() / denominator
+                                };
+                                let x = rect.left() + rect.width() * bin as f32 / 255.0;
+                                let y = rect.bottom() - level * (rect.height() - 3.0);
+                                points[channel][bin] = Pos2::new(x, y);
+                            }
+                            let color = match channel {
+                                0 => Color32::from_rgb(240, 80, 80),
+                                1 => Color32::from_rgb(80, 220, 120),
+                                _ => Color32::from_rgb(80, 140, 255),
+                            };
+                            painter.add(egui::Shape::line(
+                                points[channel].to_vec(),
+                                Stroke::new(1.4_f32, color),
+                            ));
+                        }
+                    });
+            });
     }
 
     fn draw_arrows(&mut self, ui: &mut egui::Ui, avail: Rect, now: f64) {
@@ -2107,9 +2206,13 @@ impl BladrApp {
         } else if no {
             self.default_prompt_open = false;
             self.settings.default_viewer_declined = true;
+            self.settings.default_viewer_snooze = 0;
             self.persist_settings();
         } else if later {
             self.default_prompt_open = false;
+            self.settings.default_viewer_snooze =
+                settings::now_unix().saturating_add(7 * 24 * 60 * 60);
+            self.persist_settings();
         }
     }
 
@@ -2304,6 +2407,7 @@ impl BladrApp {
                             .changed()
                         {
                             self.settings.default_viewer_declined = !ask;
+                            self.settings.default_viewer_snooze = 0;
                             self.persist_settings();
                         }
                         ui.label(

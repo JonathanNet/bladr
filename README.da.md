@@ -12,12 +12,12 @@ Bladr er et selvstændigt program og indeholder ingen kode fra ACDSee.
 
 Der er to muligheder under **Releases** på GitHub:
 
-- **`Bladr-0.3.7-Setup.exe`** – installationsprogram til Windows.
+- **`Bladr-0.3.8-Setup.exe`** – installationsprogram til Windows.
 - **`Bladr.exe`** – portabel enkeltfil, som kan kopieres hvor som helst hen.
 
 ### Installation
 
-Kør `Bladr-0.3.7-Setup.exe`. Installationen er **per bruger** og kræver
+Kør `Bladr-0.3.8-Setup.exe`. Installationen er **per bruger** og kræver
 **ingen administrator**. Den opretter:
 
 - Start-menu-genvej og valgfri skrivebordsgenvej.
@@ -55,6 +55,7 @@ og valget gemmes i `%APPDATA%\Bladr\language.txt`.
   toner frem ved aktivitet og forsvinder efter et par sekunder.
 - **EXIF-overlay** med lukketid, blænde, ISO, brændvidde, kamera og dato.
   Slås til/fra med `I`; HUD'en bliver stående, mens den vises.
+- **RGB-histogram** i øverste højre hjørne; slås til/fra med `H`.
 - **Fokuspunkter** for Canon CR3: **højreklik → Vis fokuspunkter**. Læser
   Canons AFInfo2-record og tegner det valgte AF-område oven på billedet.
 - **Sæt som baggrund** med Centreret, Flise, Strakt og Gendan. RAW-filer
@@ -107,6 +108,7 @@ og valget gemmes i `%APPDATA%\Bladr\language.txt`.
 | Slet billede | `Del` |
 | Sæt som baggrund | Højreklik → Sæt som baggrund |
 | Vis EXIF / hold HUD | `I` |
+| Vis/skjul RGB-histogram | `H` |
 | Vis/skjul fokuspunkter | Højreklik → Vis fokuspunkter, `F3` |
 | Skift sprog (dansk/engelsk) | `Alt+L` |
 | Indstillinger (opdatering, sprog) | `F2` |
@@ -211,6 +213,12 @@ versions-tag.
   anvender EXIF-orientering og springer forældede anmodninger over.
 - `src/app.rs` – egui/eframe-UI, wheel-håndtering, fuldskærm, HUD, zoom/pan og
   cache af teksturer.
+
+## Branches
+
+- `main` – stabile udgivelser.
+- `dev` – test. Push bygger testartifacts, men publicerer ikke en GitHub-release.
+  Merge `dev` ind i `main` og push et `v*`-tag, når en build er stabil.
 
 ## Begrænsninger
 

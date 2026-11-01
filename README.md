@@ -12,12 +12,12 @@ Bladr is an independent program and contains no code from ACDSee.
 
 There are two options under **Releases** on GitHub:
 
-- **`Bladr-0.3.7-Setup.exe`** — Windows installer.
+- **`Bladr-0.3.8-Setup.exe`** — Windows installer.
 - **`Bladr.exe`** — portable single file that can be copied anywhere.
 
 ### Installation
 
-Run `Bladr-0.3.7-Setup.exe`. It installs **per user** and requires **no
+Run `Bladr-0.3.8-Setup.exe`. It installs **per user** and requires **no
 administrator rights**. It creates:
 
 - A Start-menu shortcut and an optional desktop shortcut.
@@ -56,6 +56,7 @@ choice is saved in `%APPDATA%\Bladr\language.txt`.
   fades in on activity and disappears after a few seconds.
 - **EXIF overlay** with shutter speed, aperture, ISO, focal length, camera and
   date. Toggle it with `I`; the HUD stays visible while it is open.
+- **RGB histogram** overlay in the top-right corner; toggle it with `H`.
 - **Focus points** overlay for Canon CR3: **right-click → Show Focus Points**.
   Reads Canon's AFInfo2 record and draws the selected AF area over the image.
 - **Set Wallpaper** submenu: Centered, Tiled, Stretched and Restore. RAW files
@@ -106,6 +107,7 @@ choice is saved in `%APPDATA%\Bladr\language.txt`.
 | Delete image | `Del` |
 | Set wallpaper | Right-click → Set Wallpaper |
 | Show EXIF info / keep HUD | `I` |
+| Show/hide RGB histogram | `H` |
 | Show/hide focus points | Right-click → Show Focus Points, `F3` |
 | Switch language (Danish/English) | `Alt+L` |
 | Options | `F2` |
@@ -221,6 +223,12 @@ on a version tag.
 - `src/i18n.rs` — Danish/English strings with English fallback.
 - `src/settings.rs` — persisted options (`%APPDATA%\Bladr\settings.txt`).
 - `src/update.rs` — GitHub release check and installer download via WinHTTP.
+
+## Branches
+
+- `main` — stable releases.
+- `dev` — testing. Pushes build test artifacts but do not publish a GitHub
+  release. Merge `dev` into `main` and push a `v*` tag when a build is stable.
 
 ## Limitations
 
