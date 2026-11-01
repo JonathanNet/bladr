@@ -360,7 +360,7 @@ impl BladrApp {
     }
 
     fn request_exif(&mut self) {
-        if !self.exif_visible || self.exif_rx.is_some() {
+        if (!self.exif_visible && !self.settings.histogram) || self.exif_rx.is_some() {
             return;
         }
         if self.exif_cache.contains_key(&self.index) {
@@ -658,6 +658,7 @@ impl BladrApp {
         self.hint_until = 0.0;
         self.hint_scheduled = false;
         self.last_activity = 0.0;
+        self.request_exif();
         save_last_folder(&dir);
     }
 
@@ -1072,6 +1073,9 @@ impl BladrApp {
         if snap.histogram {
             self.settings.histogram = !self.settings.histogram;
             self.persist_settings();
+            if self.settings.histogram {
+                self.request_exif();
+            }
             self.last_activity = now;
         }
 
@@ -1341,6 +1345,9 @@ impl BladrApp {
                             if ui.button(i18n::tr(lang, histogram_key)).clicked() {
                                 self.settings.histogram = !self.settings.histogram;
                                 self.persist_settings();
+                                if self.settings.histogram {
+                                    self.request_exif();
+                                }
                                 ui.close_menu();
                             }
                             ui.menu_button(i18n::tr(lang, "menu.wallpaper"), |ui| {
@@ -1426,20 +1433,37 @@ impl BladrApp {
             return;
         };
         let histogram = tex.histogram;
-        let max = histogram
+
+        // A small box blur removes one-bin spikes, while sqrt() keeps shadow
+        // detail visible without flattening the highlights.
+        let mut smooth = [[0.0f32; 256]; 3];
+        for channel in 0..3 {
+            for bin in 0..256 {
+                let mut sum = 0.0;
+                let mut weight = 0.0;
+                for (offset, factor) in [(-2, 1.0), (-1, 2.0), (0, 3.0), (1, 2.0), (2, 1.0)] {
+                    let index = bin as isize + offset;
+                    if (0..256).contains(&index) {
+                        sum += histogram[channel][index as usize] as f32 * factor;
+                        weight += factor;
+                    }
+                }
+                smooth[channel][bin] = sum / weight;
+            }
+        }
+        let max = smooth
             .iter()
             .flat_map(|channel| channel.iter())
             .copied()
-            .max()
-            .unwrap_or(0);
-        if max == 0 {
+            .fold(0.0f32, f32::max);
+        if max <= 0.0 {
             return;
         }
 
+        let exif = self.exif_cache.get(&self.index).and_then(|data| data.as_ref());
         let screen = ctx.screen_rect();
-        let width = 300.0;
-        let height = 150.0;
-        let mut points = [[Pos2::ZERO; 256]; 3];
+        let width = 312.0;
+        let height = 194.0;
 
         egui::Area::new(Id::new("histogram"))
             .order(egui::Order::Foreground)
@@ -1451,18 +1475,23 @@ impl BladrApp {
             .show(ctx, |ui| {
                 ui.set_width(width);
                 egui::Frame::NONE
-                    .fill(Color32::from_rgba_unmultiplied(13, 15, 19, 225))
-                    .corner_radius(CornerRadius::same(10))
-                    .inner_margin(Margin::symmetric(12, 9))
+                    .fill(Color32::from_rgba_unmultiplied(17, 19, 23, 238))
+                    .stroke(Stroke::new(1.0_f32, Color32::from_gray(48)))
+                    .corner_radius(CornerRadius::same(11))
+                    .inner_margin(Margin::symmetric(13, 10))
                     .show(ui, |ui| {
-                        ui.set_min_width(width - 24.0);
-                        ui.label(
-                            RichText::new(i18n::tr(self.lang, "histogram.title"))
-                                .size(11.0)
-                                .color(Color32::from_gray(180)),
-                        );
+                        ui.set_min_width(width - 26.0);
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                RichText::new(i18n::tr(self.lang, "histogram.title"))
+                                    .size(11.0)
+                                    .color(Color32::from_gray(185)),
+                            );
+                        });
+                        ui.add_space(2.0);
+
                         let (rect, _) = ui.allocate_exact_size(
-                            Vec2::new(width - 24.0, height - 32.0),
+                            Vec2::new(width - 26.0, height - 58.0),
                             Sense::hover(),
                         );
                         let painter = ui.painter_at(rect);
@@ -1471,32 +1500,89 @@ impl BladrApp {
                             let x = rect.left() + rect.width() * step as f32 / 4.0;
                             painter.line_segment(
                                 [Pos2::new(x, rect.top()), Pos2::new(x, rect.bottom())],
-                                Stroke::new(0.6_f32, Color32::from_gray(38)),
+                                Stroke::new(0.5_f32, Color32::from_gray(32)),
+                            );
+                        }
+                        for step in 1..3 {
+                            let y = rect.top() + rect.height() * step as f32 / 3.0;
+                            painter.line_segment(
+                                [Pos2::new(rect.left(), y), Pos2::new(rect.right(), y)],
+                                Stroke::new(0.5_f32, Color32::from_gray(27)),
                             );
                         }
 
-                        let denominator = (max as f32).ln_1p();
                         for channel in 0..3 {
+                            let mut points = Vec::with_capacity(256);
                             for bin in 0..256 {
-                                let value = histogram[channel][bin];
-                                let level = if value == 0 {
-                                    0.0
-                                } else {
-                                    (value as f32).ln_1p() / denominator
-                                };
+                                let level = (smooth[channel][bin] / max).sqrt();
                                 let x = rect.left() + rect.width() * bin as f32 / 255.0;
                                 let y = rect.bottom() - level * (rect.height() - 3.0);
-                                points[channel][bin] = Pos2::new(x, y);
+                                points.push(Pos2::new(x, y));
                             }
-                            let color = match channel {
-                                0 => Color32::from_rgb(240, 80, 80),
-                                1 => Color32::from_rgb(80, 220, 120),
-                                _ => Color32::from_rgb(80, 140, 255),
+                            let (fill, line) = match channel {
+                                0 => (
+                                    Color32::from_rgba_unmultiplied(240, 80, 80, 58),
+                                    Color32::from_rgb(250, 95, 90),
+                                ),
+                                1 => (
+                                    Color32::from_rgba_unmultiplied(70, 215, 120, 55),
+                                    Color32::from_rgb(80, 225, 125),
+                                ),
+                                _ => (
+                                    Color32::from_rgba_unmultiplied(70, 130, 255, 62),
+                                    Color32::from_rgb(90, 150, 255),
+                                ),
                             };
+
+                            let mut area = Vec::with_capacity(258);
+                            area.push(Pos2::new(points[0].x, rect.bottom()));
+                            area.extend(points.iter().copied());
+                            area.push(Pos2::new(points[255].x, rect.bottom()));
+                            painter.add(egui::Shape::Path(egui::epaint::PathShape {
+                                points: area,
+                                closed: true,
+                                fill,
+                                stroke: Stroke::NONE.into(),
+                            }));
                             painter.add(egui::Shape::line(
-                                points[channel].to_vec(),
-                                Stroke::new(1.4_f32, color),
+                                points,
+                                Stroke::new(1.1_f32, line),
                             ));
+                        }
+
+                        if let Some(exif) = exif {
+                            ui.add_space(4.0);
+                            ui.horizontal(|ui| {
+                                let label_color = Color32::from_gray(155);
+                                if let Some(iso) = exif.iso {
+                                    ui.label(
+                                        RichText::new(format!("ISO {iso}"))
+                                            .size(9.5)
+                                            .color(label_color),
+                                    );
+                                }
+                                if let Some(focal) = &exif.focal {
+                                    ui.label(
+                                        RichText::new(focal)
+                                            .size(9.5)
+                                            .color(label_color),
+                                    );
+                                }
+                                if let Some(aperture) = &exif.aperture {
+                                    ui.label(
+                                        RichText::new(aperture.replace('/', " / "))
+                                            .size(9.5)
+                                            .color(label_color),
+                                    );
+                                }
+                                if let Some(exposure) = &exif.exposure {
+                                    ui.label(
+                                        RichText::new(exposure.replace(" s", " sec"))
+                                            .size(9.5)
+                                            .color(label_color),
+                                    );
+                                }
+                            });
                         }
                     });
             });
