@@ -12,12 +12,12 @@ Bladr is an independent program and contains no code from ACDSee.
 
 There are two options under **Releases** on GitHub:
 
-- **`Bladr-0.3.6-Setup.exe`** — Windows installer.
+- **`Bladr-0.3.7-Setup.exe`** — Windows installer.
 - **`Bladr.exe`** — portable single file that can be copied anywhere.
 
 ### Installation
 
-Run `Bladr-0.3.6-Setup.exe`. It installs **per user** and requires **no
+Run `Bladr-0.3.7-Setup.exe`. It installs **per user** and requires **no
 administrator rights**. It creates:
 
 - A Start-menu shortcut and an optional desktop shortcut.
@@ -75,8 +75,11 @@ choice is saved in `%APPDATA%\Bladr\language.txt`.
 - Starts **maximised**, and has an **About** dialog (`F1` or the right-click
   menu) showing the version.
 - **Options** dialog (`F2`) with **automatic update** on/off, **start in full
-  screen**, manual “Check now”, and language selection. Future options belong
-  here.
+  screen**, **default photo viewer**, manual “Check now”, and language
+  selection.
+- **Default photo viewer:** Bladr registers itself with Windows. If it is not
+  the default, it asks at startup; “No, don’t ask again” suppresses the prompt,
+  and it can be enabled again under **Default photo viewer** in Options.
 - **Automatic updates:** checks GitHub Releases at most every six hours,
   downloads the installer and starts it. Turn it off in Options. The setting is
   stored in `%APPDATA%\Bladr\settings.txt`.

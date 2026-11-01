@@ -10,6 +10,7 @@ use eframe::egui::{
     Sense, Stroke, StrokeKind, TextureHandle, TextureOptions, Vec2,
 };
 
+use crate::associations;
 use crate::decode::{DecodeEvent, Decoder};
 use crate::delete;
 use crate::exif::{self, ExifData};
@@ -150,6 +151,9 @@ pub struct BladrApp {
     delete_path: Option<PathBuf>,
     delete_busy: bool,
     delete_rx: Option<Receiver<Result<(), String>>>,
+    default_prompt_open: bool,
+    default_status: Option<bool>,
+    default_status_at: f64,
     wallpaper_busy: bool,
     wallpaper_rx: Option<Receiver<Result<(), String>>>,
 }
@@ -171,6 +175,9 @@ impl BladrApp {
         i18n::set_decoder_lang(lang);
         let settings = settings::load();
         let start_fullscreen = start_fullscreen || settings.start_fullscreen;
+        let _ = associations::register();
+        let default_ok = associations::is_default();
+        let default_prompt_open = !settings.default_viewer_declined && !default_ok;
 
         let mut app = Self {
             folder: None,
@@ -230,6 +237,9 @@ impl BladrApp {
             delete_path: None,
             delete_busy: false,
             delete_rx: None,
+            default_prompt_open,
+            default_status: Some(default_ok),
+            default_status_at: 0.0,
             wallpaper_busy: false,
             wallpaper_rx: None,
         };
@@ -452,8 +462,31 @@ impl BladrApp {
         }
     }
 
-    fn request_delete(&mut self) {
-        if self.photos.is_empty() {
+    fn poll_default(&mut self, now: f64) {
+        if !self.options_open && !self.default_prompt_open {
+            return;
+        }
+        if now - self.default_status_at < 2.0 {
+            return;
+        }
+        self.default_status_at = now;
+        let status = associations::is_default();
+        self.default_status = Some(status);
+        if status {
+            self.default_prompt_open = false;
+        }
+    }
+
+    fn choose_default_viewer(&mut self, now: f64) {
+        self.settings.default_viewer_declined = false;
+        self.persist_settings();
+        self.default_status_at = 0.0;
+        if let Err(error) = associations::open_default_apps() {
+            self.error = Some((error, now + 14.0));
+        }
+    }
+
+    fn request_delete(&mut self) {        if self.photos.is_empty() {
             return;
         }
         self.delete_path = Some(self.photos[self.index].path.clone());
@@ -887,6 +920,13 @@ impl BladrApp {
             if snap.escape && !self.delete_busy {
                 self.delete_open = false;
                 self.delete_path = None;
+            }
+            return;
+        }
+
+        if self.default_prompt_open {
+            if snap.escape {
+                self.default_prompt_open = false;
             }
             return;
         }
@@ -1764,6 +1804,7 @@ impl BladrApp {
         self.draw_update(ctx);
         self.draw_path_prompt(ctx);
         self.draw_delete(ctx);
+        self.draw_default_prompt(ctx);
     }
 
     fn draw_slideshow_bar(&mut self, ctx: &egui::Context, now: f64) {
@@ -1990,6 +2031,88 @@ impl BladrApp {
         }
     }
 
+    fn draw_default_prompt(&mut self, ctx: &egui::Context) {
+        if !self.default_prompt_open {
+            return;
+        }
+        let lang = self.lang;
+        let screen = ctx.screen_rect();
+        let width = 540.0;
+        let now = ctx.input(|input| input.time);
+        let mut yes = false;
+        let mut no = false;
+        let mut later = false;
+
+        egui::Area::new(Id::new("default-viewer-prompt"))
+            .order(egui::Order::Tooltip)
+            .fixed_pos(Pos2::new(
+                screen.center().x - width * 0.5,
+                screen.center().y - 150.0,
+            ))
+            .show(ctx, |ui| {
+                ui.set_width(width);
+                egui::Frame::NONE
+                    .fill(Color32::from_rgb(25, 27, 33))
+                    .stroke(Stroke::new(1.0_f32, Color32::from_rgb(72, 76, 86)))
+                    .corner_radius(CornerRadius::same(14))
+                    .inner_margin(Margin::symmetric(24, 20))
+                    .show(ui, |ui| {
+                        ui.set_min_width(width - 48.0);
+                        ui.label(
+                            RichText::new(i18n::tr(lang, "default.title"))
+                                .size(20.0)
+                                .strong()
+                                .color(Color32::WHITE),
+                        );
+                        ui.add_space(10.0);
+                        ui.label(
+                            RichText::new(i18n::tr(lang, "default.body"))
+                                .size(13.0)
+                                .color(Color32::from_gray(205)),
+                        );
+                        ui.add_space(18.0);
+                        ui.horizontal(|ui| {
+                            if ui
+                                .add(
+                                    egui::Button::new(
+                                        RichText::new(i18n::tr(lang, "default.yes")).size(13.0),
+                                    )
+                                    .min_size(Vec2::new(170.0, 34.0)),
+                                )
+                                .clicked()
+                            {
+                                yes = true;
+                            }
+                            if ui
+                                .add(
+                                    egui::Button::new(
+                                        RichText::new(i18n::tr(lang, "default.no")).size(13.0),
+                                    )
+                                    .min_size(Vec2::new(180.0, 34.0)),
+                                )
+                                .clicked()
+                            {
+                                no = true;
+                            }
+                            if ui.button(i18n::tr(lang, "default.later")).clicked() {
+                                later = true;
+                            }
+                        });
+                    });
+            });
+
+        if yes {
+            self.default_prompt_open = false;
+            self.choose_default_viewer(now);
+        } else if no {
+            self.default_prompt_open = false;
+            self.settings.default_viewer_declined = true;
+            self.persist_settings();
+        } else if later {
+            self.default_prompt_open = false;
+        }
+    }
+
     fn draw_about(&mut self, ctx: &egui::Context) {
         if !self.about_open {
             return;
@@ -2147,6 +2270,47 @@ impl BladrApp {
                                 .color(Color32::from_rgb(235, 120, 100)),
                             );
                         }
+
+                        ui.add_space(12.0);
+                        ui.separator();
+                        ui.add_space(8.0);
+                        ui.label(
+                            RichText::new(i18n::tr(lang, "options.default_viewer"))
+                                .size(12.0)
+                                .strong(),
+                        );
+                        let status_text = match self.default_status {
+                            Some(true) => i18n::tr(lang, "options.default_yes"),
+                            Some(false) => i18n::tr(lang, "options.default_no"),
+                            None => i18n::tr(lang, "options.default_checking"),
+                        };
+                        ui.label(
+                            RichText::new(status_text)
+                                .size(11.0)
+                                .color(Color32::from_gray(165)),
+                        );
+                        if ui
+                            .button(i18n::tr(lang, "options.default_choose"))
+                            .clicked()
+                        {
+                            self.choose_default_viewer(ctx.input(|input| input.time));
+                        }
+                        let mut ask = !self.settings.default_viewer_declined;
+                        if ui
+                            .checkbox(
+                                &mut ask,
+                                i18n::tr(lang, "options.default_ask"),
+                            )
+                            .changed()
+                        {
+                            self.settings.default_viewer_declined = !ask;
+                            self.persist_settings();
+                        }
+                        ui.label(
+                            RichText::new(i18n::tr(lang, "options.default_hint"))
+                                .size(10.0)
+                                .color(Color32::from_gray(120)),
+                        );
 
                         ui.add_space(8.0);
                         let status = match self.update_status {
@@ -2640,6 +2804,7 @@ impl eframe::App for BladrApp {
         self.poll_focus();
         self.poll_wallpaper(snap.time);
         self.poll_delete(snap.time);
+        self.poll_default(snap.time);
         self.poll_incoming(ctx);
         self.handle_input(ctx, rect, &snap);
         self.prefetch();

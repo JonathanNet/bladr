@@ -4,7 +4,7 @@
 
 #define MyAppName "Bladr"
 #ifndef MyAppVersion
-  #define MyAppVersion "0.3.6"
+  #define MyAppVersion "0.3.7"
 #endif
 #define MyAppPublisher "Bladr"
 #define MyAppExeName "Bladr.exe"

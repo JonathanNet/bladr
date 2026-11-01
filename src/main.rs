@@ -5,6 +5,7 @@
 //! away.
 
 mod app;
+mod associations;
 mod decode;
 mod delete;
 mod exif;

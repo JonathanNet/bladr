@@ -7,6 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 pub struct Settings {
     pub auto_update: bool,
     pub start_fullscreen: bool,
+    pub default_viewer_declined: bool,
     pub last_check: u64,
 }
 
@@ -15,6 +16,7 @@ impl Default for Settings {
         Self {
             auto_update: true,
             start_fullscreen: false,
+            default_viewer_declined: false,
             last_check: 0,
         }
     }
@@ -54,6 +56,9 @@ fn parse(text: &str, settings: &mut Settings) {
         match key.trim() {
             "auto_update" => settings.auto_update = value.trim() != "0",
             "start_fullscreen" => settings.start_fullscreen = value.trim() != "0",
+            "default_viewer_declined" => {
+                settings.default_viewer_declined = value.trim() != "0";
+            }
             "last_check" => settings.last_check = value.trim().parse().unwrap_or(0),
             _ => {}
         }
@@ -73,9 +78,10 @@ pub fn load() -> Settings {
 
 pub fn save(settings: &Settings) -> Result<(), String> {
     let text = format!(
-        "auto_update={}\nstart_fullscreen={}\nlast_check={}\n",
+        "auto_update={}\nstart_fullscreen={}\ndefault_viewer_declined={}\nlast_check={}\n",
         if settings.auto_update { 1 } else { 0 },
         if settings.start_fullscreen { 1 } else { 0 },
+        if settings.default_viewer_declined { 1 } else { 0 },
         settings.last_check
     );
 
