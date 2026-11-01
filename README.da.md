@@ -8,6 +8,16 @@ Bladr er et selvstændigt program og indeholder ingen kode fra ACDSee.
 
 [English version](README.md)
 
+## Skærmbilleder
+
+![Bladr med HUD, EXIF og RGB-histogram](docs/screenshots/viewer.jpg)
+
+| Højrekliksmenu | Indstillinger |
+| --- | --- |
+| ![Bladr højrekliksmenu](docs/screenshots/menu.jpg) | ![Bladr indstillinger](docs/screenshots/options.jpg) |
+
+![Bladr slideshow-knapper](docs/screenshots/slideshow.jpg)
+
 ## Download
 
 Der er to muligheder under **Releases** på GitHub:

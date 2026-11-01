@@ -46,6 +46,7 @@ ANALYSE.md
 # Keep the application icon even though it is a PNG
 !/assets/*.png
 !/docs/*.png
+!/docs/screenshots/*.jpg
 
 # Editor and OS noise
 .vscode/
