@@ -1333,6 +1333,16 @@ impl BladrApp {
                                 }
                                 ui.close_menu();
                             }
+                            let histogram_key = if self.settings.histogram {
+                                "menu.histogram_hide"
+                            } else {
+                                "menu.histogram_show"
+                            };
+                            if ui.button(i18n::tr(lang, histogram_key)).clicked() {
+                                self.settings.histogram = !self.settings.histogram;
+                                self.persist_settings();
+                                ui.close_menu();
+                            }
                             ui.menu_button(i18n::tr(lang, "menu.wallpaper"), |ui| {
                                 if ui
                                     .button(i18n::tr(lang, "wallpaper.centered"))
