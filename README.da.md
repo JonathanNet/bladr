@@ -8,6 +8,8 @@ Bladr er et selvstændigt program og indeholder ingen kode fra ACDSee.
 
 [English version](README.md)
 
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-st%C3%B8t%20Bladr-FFDD00?style=flat-square&logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/jonathannet)
+
 ## Skærmbilleder
 
 ![Bladr med HUD, EXIF og RGB-histogram](docs/screenshots/viewer.jpg)
@@ -241,6 +243,12 @@ versions-tag.
 - Der er ingen katalogdatabase, metadata-editor eller ikke-destruktive
   redigeringer – det er en fremviser, ikke en ACDSee-erstatning.
 - Mapper læses ikke rekursivt; kun billeder direkte i den valgte mappe.
+
+## Støt
+
+Hvis Bladr er nyttigt for dig, kan du støtte udviklingen med en kaffe:
+
+[Buy Me a Coffee →](https://buymeacoffee.com/jonathannet)
 
 ## Licens
 

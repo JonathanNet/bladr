@@ -8,6 +8,8 @@ Bladr is an independent program and contains no code from ACDSee.
 
 [Dansk version](README.da.md)
 
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-support%20Bladr-FFDD00?style=flat-square&logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/jonathannet)
+
 ## Screenshots
 
 ![Bladr viewer with HUD, EXIF and RGB histogram](docs/screenshots/viewer.jpg)
@@ -252,6 +254,12 @@ on a version tag.
   it is a viewer, not an ACDSee replacement.
 - Folders are not scanned recursively; only images directly in the selected
   folder.
+
+## Support
+
+If Bladr is useful to you, you can support its development with a coffee:
+
+[Buy Me a Coffee →](https://buymeacoffee.com/jonathannet)
 
 ## License
 
