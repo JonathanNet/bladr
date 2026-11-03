@@ -2,6 +2,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::time::Duration;
 
@@ -492,7 +493,22 @@ impl BladrApp {
         }
     }
 
-    fn request_delete(&mut self) {        if self.photos.is_empty() {
+    fn show_file_location(&mut self, now: f64) {
+        let Some(photo) = self.photos.get(self.index) else {
+            return;
+        };
+        let path = photo.path.clone();
+        let argument = format!("/select,\"{}\"", path.display());
+        if let Err(error) = Command::new("explorer.exe").arg(argument).spawn() {
+            self.error = Some((
+                i18n::tf(self.lang, "file_location.failed", &[("e", &error.to_string())]),
+                now + 14.0,
+            ));
+        }
+    }
+
+    fn request_delete(&mut self) {
+        if self.photos.is_empty() {
             return;
         }
         self.delete_path = Some(self.photos[self.index].path.clone());
@@ -1377,6 +1393,10 @@ impl BladrApp {
                             });
                             if ui.button(i18n::tr(lang, "menu.delete")).clicked() {
                                 self.request_delete();
+                                ui.close_menu();
+                            }
+                            if ui.button(i18n::tr(lang, "menu.file_location")).clicked() {
+                                self.show_file_location(ctx.input(|input| input.time));
                                 ui.close_menu();
                             }
                             ui.separator();

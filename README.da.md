@@ -24,12 +24,12 @@ Bladr er et selvstændigt program og indeholder ingen kode fra ACDSee.
 
 Der er to muligheder under **Releases** på GitHub:
 
-- **`Bladr-0.3.10-Setup.exe`** – installationsprogram til Windows.
+- **`Bladr-0.3.11-Setup.exe`** – installationsprogram til Windows.
 - **`Bladr.exe`** – portabel enkeltfil, som kan kopieres hvor som helst hen.
 
 ### Installation
 
-Kør `Bladr-0.3.10-Setup.exe`. Installationen er **per bruger** og kræver
+Kør `Bladr-0.3.11-Setup.exe`. Installationen er **per bruger** og kræver
 **ingen administrator**. Den opretter:
 
 - Start-menu-genvej og valgfri skrivebordsgenvej.
@@ -80,6 +80,8 @@ og valget gemmes i `%APPDATA%\Bladr\language.txt`.
   ikke er papirkurv, slettes filen permanent efter bekræftelse. Kræver Windows
   administratorrettigheder, spørger Bladr om UAC og sletter via en midlertidig
   administrator-hjælper.
+- **Vis fil lokation:** højreklik → **Vis fil lokation** åbner Stifinder med
+  den aktuelle fil markeret.
 - **Drag & drop** af en fil eller mappe, samt `O` (mappe) og `Ctrl+O` (fil).
 - **Kun én instans:** åbner man et nyt billede fra Stifinder, bruges det
   kørende Bladr-vindue i stedet for at starte en ny kopi.
@@ -118,6 +120,7 @@ og valget gemmes i `%APPDATA%\Bladr\language.txt`.
 | Auto-afspilning | `Mellemrum` |
 | Slideshow-forsinkelse / gentag / tilfældig | Knapperne på slideshow-baren |
 | Slet billede | `Del` |
+| Vis fil lokation | Højreklik → Vis fil lokation |
 | Sæt som baggrund | Højreklik → Sæt som baggrund |
 | Vis EXIF / hold HUD | `I` |
 | Vis/skjul RGB-histogram | `H` |

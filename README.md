@@ -24,12 +24,12 @@ Bladr is an independent program and contains no code from ACDSee.
 
 There are two options under **Releases** on GitHub:
 
-- **`Bladr-0.3.10-Setup.exe`** — Windows installer.
+- **`Bladr-0.3.11-Setup.exe`** — Windows installer.
 - **`Bladr.exe`** — portable single file that can be copied anywhere.
 
 ### Installation
 
-Run `Bladr-0.3.10-Setup.exe`. It installs **per user** and requires **no
+Run `Bladr-0.3.11-Setup.exe`. It installs **per user** and requires **no
 administrator rights**. It creates:
 
 - A Start-menu shortcut and an optional desktop shortcut.
@@ -81,6 +81,8 @@ choice is saved in `%APPDATA%\Bladr\language.txt`.
   no Recycle Bin, the file is deleted permanently after confirmation. If
   Windows requires administrator rights, Bladr asks for UAC and deletes through
   a temporary administrator helper.
+- **Show file location:** right-click → **Show file location** opens Explorer
+  with the current file selected.
 - **Drag & drop** of a file or folder, plus `O` (folder) and `Ctrl+O` (file).
 - **Single instance:** opening another image from Explorer reuses the running
   Bladr window instead of starting a second copy.
@@ -117,6 +119,7 @@ choice is saved in `%APPDATA%\Bladr\language.txt`.
 | Slideshow | `Space` |
 | Slideshow delay / loop / shuffle | Controls on the slideshow bar |
 | Delete image | `Del` |
+| Show file location | Right-click → Show file location |
 | Set wallpaper | Right-click → Set Wallpaper |
 | Show EXIF info / keep HUD | `I` |
 | Show/hide RGB histogram | `H` |
