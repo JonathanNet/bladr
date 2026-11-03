@@ -12,6 +12,7 @@ mod exif;
 mod focus;
 mod i18n;
 mod library;
+mod location;
 mod settings;
 mod single_instance;
 mod tiff;

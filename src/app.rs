@@ -2,7 +2,6 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::time::Duration;
 
@@ -17,6 +16,7 @@ use crate::delete;
 use crate::exif::{self, ExifData};
 use crate::focus::{self, FocusData};
 use crate::i18n::{self, Lang};
+use crate::location;
 use crate::wallpaper::{self, Style as WallpaperStyle};
 use crate::library::{self, Photo};
 use crate::settings::{self, Settings};
@@ -497,11 +497,9 @@ impl BladrApp {
         let Some(photo) = self.photos.get(self.index) else {
             return;
         };
-        let path = photo.path.clone();
-        let argument = format!("/select,\"{}\"", path.display());
-        if let Err(error) = Command::new("explorer.exe").arg(argument).spawn() {
+        if let Err(error) = location::reveal(&photo.path) {
             self.error = Some((
-                i18n::tf(self.lang, "file_location.failed", &[("e", &error.to_string())]),
+                i18n::tf(self.lang, "file_location.failed", &[("e", &error)]),
                 now + 14.0,
             ));
         }

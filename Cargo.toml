@@ -1,6 +1,6 @@
 [package]
 name = "bladr"
-version = "0.3.11"
+version = "0.3.12"
 edition = "2021"
 description = "A fast, keyboard- and wheel-driven photo viewer for Windows"
 license = "MIT"
