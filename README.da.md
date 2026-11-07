@@ -24,12 +24,12 @@ Bladr er et selvstændigt program og indeholder ingen kode fra ACDSee.
 
 Der er to muligheder under **Releases** på GitHub:
 
-- **`Bladr-0.3.12-Setup.exe`** – installationsprogram til Windows.
+- **`Bladr-0.3.13-Setup.exe`** – installationsprogram til Windows.
 - **`Bladr.exe`** – portabel enkeltfil, som kan kopieres hvor som helst hen.
 
 ### Installation
 
-Kør `Bladr-0.3.12-Setup.exe`. Installationen er **per bruger** og kræver
+Kør `Bladr-0.3.13-Setup.exe`. Installationen er **per bruger** og kræver
 **ingen administrator**. Den opretter:
 
 - Start-menu-genvej og valgfri skrivebordsgenvej.
@@ -82,6 +82,9 @@ og valget gemmes i `%APPDATA%\Bladr\language.txt`.
   administrator-hjælper.
 - **Vis fil lokation:** højreklik → **Vis fil lokation** åbner Stifinder med
   den aktuelle fil markeret.
+- **Skærmbillede:** tryk `S` eller højreklik → **Tag skærmbillede**, og træk
+  over billedet. Det valgte område kopieres til udklipsholderen og gemmes i
+  `Billeder\Bladr Screenshots`.
 - **Drag & drop** af en fil eller mappe, samt `O` (mappe) og `Ctrl+O` (fil).
 - **Kun én instans:** åbner man et nyt billede fra Stifinder, bruges det
   kørende Bladr-vindue i stedet for at starte en ny kopi.
@@ -121,6 +124,7 @@ og valget gemmes i `%APPDATA%\Bladr\language.txt`.
 | Slideshow-forsinkelse / gentag / tilfældig | Knapperne på slideshow-baren |
 | Slet billede | `Del` |
 | Vis fil lokation | Højreklik → Vis fil lokation |
+| Skærmbillede | `S`, eller Højreklik → Tag skærmbillede |
 | Sæt som baggrund | Højreklik → Sæt som baggrund |
 | Vis EXIF / hold HUD | `I` |
 | Vis/skjul RGB-histogram | `H` |

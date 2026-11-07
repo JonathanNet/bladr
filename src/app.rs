@@ -3,6 +3,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, TryRecvError};
+use std::sync::Arc;
 use std::time::Duration;
 
 use eframe::egui::{
@@ -17,6 +18,7 @@ use crate::exif::{self, ExifData};
 use crate::focus::{self, FocusData};
 use crate::i18n::{self, Lang};
 use crate::location;
+use crate::screenshot;
 use crate::wallpaper::{self, Style as WallpaperStyle};
 use crate::library::{self, Photo};
 use crate::settings::{self, Settings};
@@ -67,6 +69,7 @@ struct Snapshot {
     actual: bool,
     info: bool,
     histogram: bool,
+    screenshot: bool,
     open_folder: bool,
     open_file: bool,
     open_path_prompt: bool,
@@ -155,6 +158,12 @@ pub struct BladrApp {
     delete_path: Option<PathBuf>,
     delete_busy: bool,
     delete_rx: Option<Receiver<Result<(), String>>>,
+    capture_mode: bool,
+    capture_start: Option<Pos2>,
+    capture_current: Option<Pos2>,
+    capture_pixels: Option<(usize, u32, u32, Arc<Vec<u8>>)>,
+    capture_rx: Option<Receiver<Result<PathBuf, String>>>,
+    capture_notice: Option<(String, f64)>,
     default_prompt_open: bool,
     default_status: Option<bool>,
     default_status_at: f64,
@@ -243,6 +252,12 @@ impl BladrApp {
             delete_path: None,
             delete_busy: false,
             delete_rx: None,
+            capture_mode: false,
+            capture_start: None,
+            capture_current: None,
+            capture_pixels: None,
+            capture_rx: None,
+            capture_notice: None,
             default_prompt_open,
             default_status: Some(default_ok),
             default_status_at: 0.0,
@@ -505,6 +520,181 @@ impl BladrApp {
         }
     }
 
+    fn start_capture(&mut self, now: f64) {
+        if self.capture_rx.is_some() || self.photos.is_empty() {
+            return;
+        }
+        let ready = self
+            .capture_pixels
+            .as_ref()
+            .is_some_and(|(index, _, _, _)| *index == self.index);
+        if !ready {
+            self.error = Some((
+                i18n::tr(self.lang, "capture.not_ready").to_owned(),
+                now + 8.0,
+            ));
+            return;
+        }
+        self.capture_mode = true;
+        self.capture_start = None;
+        self.capture_current = None;
+        self.capture_notice = None;
+        self.last_activity = now;
+    }
+
+    fn cancel_capture(&mut self) {
+        self.capture_mode = false;
+        self.capture_start = None;
+        self.capture_current = None;
+    }
+
+    fn finish_capture(&mut self, start: Pos2, current: Pos2, image_rect: Rect, _now: f64) {
+        if !self.capture_mode {
+            return;
+        }
+        let left = start.x.min(current.x).clamp(image_rect.left(), image_rect.right());
+        let right = start.x.max(current.x).clamp(image_rect.left(), image_rect.right());
+        let top = start.y.min(current.y).clamp(image_rect.top(), image_rect.bottom());
+        let bottom = start.y.max(current.y).clamp(image_rect.top(), image_rect.bottom());
+        if right - left < 4.0 || bottom - top < 4.0 {
+            self.cancel_capture();
+            return;
+        }
+
+        let nx0 = ((left - image_rect.left()) / image_rect.width()).clamp(0.0, 1.0);
+        let nx1 = ((right - image_rect.left()) / image_rect.width()).clamp(0.0, 1.0);
+        let ny0 = ((top - image_rect.top()) / image_rect.height()).clamp(0.0, 1.0);
+        let ny1 = ((bottom - image_rect.top()) / image_rect.height()).clamp(0.0, 1.0);
+
+        let Some((index, width, height, pixels)) = self.capture_pixels.clone() else {
+            self.cancel_capture();
+            return;
+        };
+        if index != self.index || width == 0 || height == 0 {
+            self.cancel_capture();
+            return;
+        }
+
+        let x0 = ((nx0 * width as f32).floor() as u32).min(width - 1);
+        let y0 = ((ny0 * height as f32).floor() as u32).min(height - 1);
+        let x1 = ((nx1 * width as f32).ceil() as u32).clamp(x0 + 1, width);
+        let y1 = ((ny1 * height as f32).ceil() as u32).clamp(y0 + 1, height);
+        let region = (x0, y0, x1 - x0, y1 - y0);
+
+        let (tx, rx) = mpsc::channel();
+        self.capture_rx = Some(rx);
+        self.capture_mode = false;
+        self.capture_start = None;
+        self.capture_current = None;
+        self.last_activity = _now;
+
+        std::thread::spawn(move || {
+            let result = screenshot::save_and_copy(width, height, pixels, region);
+            let _ = tx.send(result);
+        });
+    }
+
+    fn poll_capture(&mut self, now: f64) {
+        let result = self.capture_rx.as_ref().and_then(|rx| rx.try_recv().ok());
+        if let Some(result) = result {
+            self.capture_rx = None;
+            match result {
+                Ok(path) => {
+                    self.capture_notice = Some((
+                        i18n::tf(
+                            self.lang,
+                            "capture.saved",
+                            &[("path", &path.display().to_string())],
+                        ),
+                        now + 7.0,
+                    ));
+                }
+                Err(error) => {
+                    self.error = Some((
+                        i18n::tf(self.lang, "capture.failed", &[("e", &error)]),
+                        now + 14.0,
+                    ));
+                }
+            }
+        }
+    }
+
+    fn draw_capture(&self, ui: &egui::Ui, image_rect: Rect) {
+        if !self.capture_mode {
+            return;
+        }
+        let painter = ui.painter();
+        let selection = match (self.capture_start, self.capture_current) {
+            (Some(start), Some(current)) => Rect::from_two_pos(start, current)
+                .intersect(image_rect),
+            _ => Rect::NOTHING,
+        };
+
+        if selection.is_positive() {
+            let dim = Color32::from_black_alpha(125);
+            for rect in [
+                Rect::from_min_max(image_rect.min, Pos2::new(image_rect.right(), selection.top())),
+                Rect::from_min_max(
+                    Pos2::new(image_rect.left(), selection.bottom()),
+                    image_rect.max,
+                ),
+                Rect::from_min_max(
+                    Pos2::new(image_rect.left(), selection.top()),
+                    Pos2::new(selection.left(), selection.bottom()),
+                ),
+                Rect::from_min_max(
+                    Pos2::new(selection.right(), selection.top()),
+                    Pos2::new(image_rect.right(), selection.bottom()),
+                ),
+            ] {
+                painter.rect_filled(rect, CornerRadius::ZERO, dim);
+            }
+            painter.rect_stroke(
+                selection,
+                CornerRadius::same(2),
+                Stroke::new(2.0_f32, Color32::from_rgb(255, 225, 120)),
+                StrokeKind::Inside,
+            );
+
+            if let Some((_, width, height, _)) = &self.capture_pixels {
+                let px_width =
+                    (selection.width() / image_rect.width() * *width as f32).round() as u32;
+                let px_height =
+                    (selection.height() / image_rect.height() * *height as f32).round() as u32;
+                painter.text(
+                    Pos2::new(selection.left() + 5.0, selection.top() + 5.0),
+                    Align2::LEFT_TOP,
+                    format!("{px_width} × {px_height}"),
+                    FontId::proportional(11.0),
+                    Color32::WHITE,
+                );
+            }
+        } else {
+            painter.rect_filled(
+                image_rect,
+                CornerRadius::ZERO,
+                Color32::from_black_alpha(80),
+            );
+        }
+
+        let label = i18n::tr(self.lang, "capture.instruction");
+        let pos = Pos2::new(image_rect.center().x, image_rect.top() + 26.0);
+        painter.text(
+            pos + Vec2::new(1.0, 1.0),
+            Align2::CENTER_CENTER,
+            label,
+            FontId::proportional(14.0),
+            Color32::from_black_alpha(220),
+        );
+        painter.text(
+            pos,
+            Align2::CENTER_CENTER,
+            label,
+            FontId::proportional(14.0),
+            Color32::WHITE,
+        );
+    }
+
     fn request_delete(&mut self) {
         if self.photos.is_empty() {
             return;
@@ -713,6 +903,7 @@ impl BladrApp {
         }
         let len = self.photos.len() as isize;
         self.index = (self.index as isize + delta).rem_euclid(len) as usize;
+        self.capture_pixels = None;
         self.fit = true;
         self.pan = Vec2::ZERO;
         self.error = None;
@@ -729,6 +920,7 @@ impl BladrApp {
             return;
         }
         self.index = index;
+        self.capture_pixels = None;
         self.fit = true;
         self.pan = Vec2::ZERO;
         self.error = None;
@@ -827,6 +1019,14 @@ impl BladrApp {
                         histogram: decoded.histogram,
                         raw: decoded.raw,
                     };
+                    if decoded.index == self.index {
+                        self.capture_pixels = Some((
+                            decoded.index,
+                            decoded.width,
+                            decoded.height,
+                            Arc::new(decoded.rgba.clone()),
+                        ));
+                    }
                     self.textures.insert(decoded.index, tex);
                     if decoded.index == self.index {
                         self.shown = decoded.index;
@@ -909,6 +1109,7 @@ impl BladrApp {
             actual: i.key_pressed(Key::Num1),
             info: i.key_pressed(Key::I),
             histogram: i.key_pressed(Key::H),
+            screenshot: i.key_pressed(Key::S),
             open_folder: i.key_pressed(Key::O) && !i.modifiers.ctrl && !i.modifiers.command,
             open_file: i.key_pressed(Key::O) && (i.modifiers.ctrl || i.modifiers.command),
             open_path_prompt: i.key_pressed(Key::L) && (i.modifiers.ctrl || i.modifiers.command),
@@ -952,6 +1153,22 @@ impl BladrApp {
                 self.default_prompt_open = false;
             }
             return;
+        }
+
+        if self.capture_mode {
+            if snap.escape || snap.screenshot {
+                self.cancel_capture();
+            }
+            return;
+        }
+
+        if snap.screenshot
+            && !self.photos.is_empty()
+            && !self.options_open
+            && !self.about_open
+            && self.update_available.is_none()
+        {
+            self.start_capture(now);
         }
 
         if snap.delete
@@ -1303,9 +1520,39 @@ impl BladrApp {
                     );
                     self.draw_focus(ui, image_rect, idx, orientation);
 
+                    if self.capture_mode {
+                        ui.ctx().set_cursor_icon(CursorIcon::Crosshair);
+                        let pointer = response.interact_pointer_pos().map(|point| {
+                            Pos2::new(
+                                point.x.clamp(image_rect.left(), image_rect.right()),
+                                point.y.clamp(image_rect.top(), image_rect.bottom()),
+                            )
+                        });
+                        if response.drag_started() {
+                            self.capture_start = pointer;
+                            self.capture_current = pointer;
+                        }
+                        if response.dragged() {
+                            if let Some(point) = pointer {
+                                self.capture_current = Some(point);
+                            }
+                        }
+                        if response.drag_stopped() {
+                            if let (Some(start), Some(current)) =
+                                (self.capture_start, self.capture_current)
+                            {
+                                self.finish_capture(start, current, image_rect, snap.time);
+                            }
+                        }
+                        if response.secondary_clicked() {
+                            self.cancel_capture();
+                        }
+                        self.draw_capture(ui, image_rect);
+                    }
+
                     let zoomed_in = draw_size.x > avail.width() + 1.0
                         || draw_size.y > avail.height() + 1.0;
-                    if zoomed_in {
+                    if zoomed_in && !self.capture_mode {
                         if response.dragged() {
                             self.pan += response.drag_delta();
                             ui.ctx().set_cursor_icon(CursorIcon::Grabbing);
@@ -1314,7 +1561,7 @@ impl BladrApp {
                         }
                     }
 
-                    if response.double_clicked() {
+                    if response.double_clicked() && !self.capture_mode {
                         self.toggle_fullscreen(ctx, snap.time);
                     }
                     if self.fullscreen && response.secondary_clicked() {
@@ -1397,6 +1644,10 @@ impl BladrApp {
                                 self.show_file_location(ctx.input(|input| input.time));
                                 ui.close_menu();
                             }
+                            if ui.button(i18n::tr(lang, "menu.screenshot")).clicked() {
+                                self.start_capture(ctx.input(|input| input.time));
+                                ui.close_menu();
+                            }
                             ui.separator();
                             if ui.button(i18n::tr(lang, "menu.open_folder")).clicked() {
                                 self.pick_folder();
@@ -1444,7 +1695,7 @@ impl BladrApp {
     }
 
     fn draw_histogram(&self, ctx: &egui::Context) {
-        if !self.settings.histogram {
+        if !self.settings.histogram || self.capture_mode {
             return;
         }
         let Some((_, tex)) = self.displayed_tex() else {
@@ -1645,7 +1896,7 @@ impl BladrApp {
     }
 
     fn draw_focus(&self, ui: &egui::Ui, image_rect: Rect, index: usize, orientation: u16) {
-        if !self.focus_visible {
+        if !self.focus_visible || self.capture_mode {
             return;
         }
         let data = match self.focus_cache.get(&index) {
@@ -1727,7 +1978,7 @@ impl BladrApp {
     }
 
     fn draw_hud(&mut self, ctx: &egui::Context, snap: &Snapshot) {
-        if self.photos.is_empty() {
+        if self.photos.is_empty() || self.capture_mode {
             return;
         }
         let lang = self.lang;
@@ -1940,12 +2191,48 @@ impl BladrApp {
                 });
         }
 
+        let notice = self.capture_notice.clone();
+        if let Some((text, until)) = notice {
+            if now < until && !self.capture_mode {
+                let fade = ((until - now) / 0.8).clamp(0.0, 1.0) as f32;
+                let w = 610.0_f32.min(screen.width() - 40.0);
+                egui::Area::new(Id::new("capture-notice"))
+                    .order(egui::Order::Foreground)
+                    .interactable(false)
+                    .fixed_pos(Pos2::new(screen.center().x - w * 0.5, bottom - 92.0))
+                    .show(ctx, |ui| {
+                        ui.set_width(w);
+                        egui::Frame::NONE
+                            .fill(Color32::from_rgba_unmultiplied(20, 38, 28, (225.0 * fade) as u8))
+                            .stroke(Stroke::new(
+                                1.0_f32,
+                                Color32::from_rgba_unmultiplied(80, 190, 120, (180.0 * fade) as u8),
+                            ))
+                            .corner_radius(CornerRadius::same(9))
+                            .inner_margin(Margin::symmetric(14, 8))
+                            .show(ui, |ui| {
+                                ui.set_min_width(w - 28.0);
+                                ui.vertical_centered(|ui| {
+                                    ui.label(
+                                        RichText::new(text)
+                                            .size(11.5)
+                                            .color(Color32::from_rgba_unmultiplied(
+                                                210, 240, 220, (235.0 * fade) as u8,
+                                            )),
+                                    );
+                                });
+                            });
+                    });
+            } else if now >= until {
+                self.capture_notice = None;
+            }
+        }
+
         if !self.photos.is_empty()
             && !self.textures.contains_key(&self.index)
             && !self.failed.contains(&self.index)
             && self.error.is_none()
-        {
-            let w = 132.0;
+        {            let w = 132.0;
             egui::Area::new(Id::new("loading"))
                 .order(egui::Order::Foreground)
                 .interactable(false)
@@ -3023,6 +3310,7 @@ impl eframe::App for BladrApp {
         self.poll_wallpaper(snap.time);
         self.poll_delete(snap.time);
         self.poll_default(snap.time);
+        self.poll_capture(snap.time);
         self.poll_incoming(ctx);
         self.handle_input(ctx, rect, &snap);
         self.prefetch();

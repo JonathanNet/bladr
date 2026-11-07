@@ -13,6 +13,7 @@ mod focus;
 mod i18n;
 mod library;
 mod location;
+mod screenshot;
 mod settings;
 mod single_instance;
 mod tiff;
