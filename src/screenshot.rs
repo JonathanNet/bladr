@@ -1,17 +1,54 @@
-//! Crop a region of the displayed image, copy it to the clipboard and save it.
+//! Crop a region of the displayed image, then copy it or save it as PNG.
 
 use std::borrow::Cow;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-pub fn save_and_copy(
+pub fn copy(
+    width: u32,
+    height: u32,
+    rgba: Arc<Vec<u8>>,
+    region: (u32, u32, u32, u32),
+) -> Result<(), String> {
+    let (image_width, image_height, cropped) = crop(width, height, &rgba, region)?;
+    let mut clipboard = arboard::Clipboard::new()
+        .map_err(|error| format!("open clipboard: {error}"))?;
+    clipboard
+        .set_image(arboard::ImageData {
+            width: image_width as usize,
+            height: image_height as usize,
+            bytes: Cow::Borrowed(&cropped),
+        })
+        .map_err(|error| format!("copy to clipboard: {error}"))
+}
+
+pub fn save(
     width: u32,
     height: u32,
     rgba: Arc<Vec<u8>>,
     region: (u32, u32, u32, u32),
 ) -> Result<PathBuf, String> {
+    let (image_width, image_height, cropped) = crop(width, height, &rgba, region)?;
+    let image = image::RgbaImage::from_raw(image_width, image_height, cropped)
+        .ok_or("cropped image has an invalid size")?;
+    let path = screenshot_path()?;
+    image
+        .save(&path)
+        .map_err(|error| format!("save screenshot: {error}"))?;
+    Ok(path)
+}
+
+fn crop(
+    width: u32,
+    height: u32,
+    rgba: &[u8],
+    region: (u32, u32, u32, u32),
+) -> Result<(u32, u32, Vec<u8>), String> {
     let (x, y, region_width, region_height) = region;
+    if width == 0 || height == 0 {
+        return Err("the image has no pixels".to_owned());
+    }
     let x = x.min(width.saturating_sub(1));
     let y = y.min(height.saturating_sub(1));
     let region_width = region_width.min(width.saturating_sub(x)).max(1);
@@ -25,25 +62,10 @@ pub fn save_and_copy(
             cropped.extend_from_slice(slice);
         }
     }
-
-    let image = image::RgbaImage::from_raw(region_width, region_height, cropped.clone())
-        .ok_or("cropped image has an invalid size")?;
-    let path = screenshot_path()?;
-    image
-        .save(&path)
-        .map_err(|error| format!("save screenshot: {error}"))?;
-
-    // Saving is the important part; clipboard access may be unavailable in a
-    // restricted session, so report success if the file was written.
-    if let Ok(mut clipboard) = arboard::Clipboard::new() {
-        let _ = clipboard.set_image(arboard::ImageData {
-            width: region_width as usize,
-            height: region_height as usize,
-            bytes: Cow::Borrowed(&cropped),
-        });
+    if cropped.len() != (region_width * region_height * 4) as usize {
+        return Err("the selected area is outside the image".to_owned());
     }
-
-    Ok(path)
+    Ok((region_width, region_height, cropped))
 }
 
 fn screenshot_path() -> Result<PathBuf, String> {

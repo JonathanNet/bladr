@@ -24,12 +24,12 @@ Bladr is an independent program and contains no code from ACDSee.
 
 There are two options under **Releases** on GitHub:
 
-- **`Bladr-0.3.13-Setup.exe`** — Windows installer.
+- **`Bladr-0.3.14-Setup.exe`** — Windows installer.
 - **`Bladr.exe`** — portable single file that can be copied anywhere.
 
 ### Installation
 
-Run `Bladr-0.3.13-Setup.exe`. It installs **per user** and requires **no
+Run `Bladr-0.3.14-Setup.exe`. It installs **per user** and requires **no
 administrator rights**. It creates:
 
 - A Start-menu shortcut and an optional desktop shortcut.
@@ -84,8 +84,8 @@ choice is saved in `%APPDATA%\Bladr\language.txt`.
 - **Show file location:** right-click → **Show file location** opens Explorer
   with the current file selected.
 - **Screenshot selection:** press `S` or right-click → **Take screenshot**, then
-  drag over the image. The selected area is copied to the clipboard and saved
-  in `Pictures\Bladr Screenshots`.
+  drag over the image. Choose **Copy to clipboard** or **Save to Bladr
+  screenshots** in the dialog.
 - **Drag & drop** of a file or folder, plus `O` (folder) and `Ctrl+O` (file).
 - **Single instance:** opening another image from Explorer reuses the running
   Bladr window instead of starting a second copy.

@@ -86,6 +86,24 @@ struct Snapshot {
     focused: bool,
 }
 
+#[derive(Clone, Copy)]
+enum CaptureAction {
+    Copy,
+    Save,
+}
+
+struct PendingCapture {
+    width: u32,
+    height: u32,
+    pixels: Arc<Vec<u8>>,
+    region: (u32, u32, u32, u32),
+}
+
+enum CaptureResult {
+    Copied,
+    Saved(PathBuf),
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum UpdateStatus {
     Idle,
@@ -162,7 +180,8 @@ pub struct BladrApp {
     capture_start: Option<Pos2>,
     capture_current: Option<Pos2>,
     capture_pixels: Option<(usize, u32, u32, Arc<Vec<u8>>)>,
-    capture_rx: Option<Receiver<Result<PathBuf, String>>>,
+    capture_pending: Option<PendingCapture>,
+    capture_rx: Option<Receiver<Result<CaptureResult, String>>>,
     capture_notice: Option<(String, f64)>,
     default_prompt_open: bool,
     default_status: Option<bool>,
@@ -256,6 +275,7 @@ impl BladrApp {
             capture_start: None,
             capture_current: None,
             capture_pixels: None,
+            capture_pending: None,
             capture_rx: None,
             capture_notice: None,
             default_prompt_open,
@@ -581,15 +601,43 @@ impl BladrApp {
         let y1 = ((ny1 * height as f32).ceil() as u32).clamp(y0 + 1, height);
         let region = (x0, y0, x1 - x0, y1 - y0);
 
-        let (tx, rx) = mpsc::channel();
-        self.capture_rx = Some(rx);
+        self.capture_pending = Some(PendingCapture {
+            width,
+            height,
+            pixels,
+            region,
+        });
         self.capture_mode = false;
         self.capture_start = None;
         self.capture_current = None;
         self.last_activity = _now;
+    }
 
+    fn submit_capture(&mut self, action: CaptureAction, _now: f64) {
+        let Some(pending) = self.capture_pending.take() else {
+            return;
+        };
+        let (tx, rx) = mpsc::channel();
+        self.capture_rx = Some(rx);
         std::thread::spawn(move || {
-            let result = screenshot::save_and_copy(width, height, pixels, region);
+            let result = match action {
+                CaptureAction::Copy => {
+                    screenshot::copy(
+                        pending.width,
+                        pending.height,
+                        pending.pixels,
+                        pending.region,
+                    )
+                    .map(|_| CaptureResult::Copied)
+                }
+                CaptureAction::Save => screenshot::save(
+                    pending.width,
+                    pending.height,
+                    pending.pixels,
+                    pending.region,
+                )
+                .map(CaptureResult::Saved),
+            };
             let _ = tx.send(result);
         });
     }
@@ -599,7 +647,13 @@ impl BladrApp {
         if let Some(result) = result {
             self.capture_rx = None;
             match result {
-                Ok(path) => {
+                Ok(CaptureResult::Copied) => {
+                    self.capture_notice = Some((
+                        i18n::tr(self.lang, "capture.copied").to_owned(),
+                        now + 6.0,
+                    ));
+                }
+                Ok(CaptureResult::Saved(path)) => {
                     self.capture_notice = Some((
                         i18n::tf(
                             self.lang,
@@ -616,6 +670,60 @@ impl BladrApp {
                     ));
                 }
             }
+        }
+    }
+
+    fn draw_capture_choice(&mut self, ctx: &egui::Context, now: f64) {
+        let Some(pending) = &self.capture_pending else {
+            return;
+        };
+        let (_, _, width, height) = pending.region;
+        let mut action = None;
+        let mut cancel = false;
+
+        egui::Window::new(i18n::tr(self.lang, "capture.title"))
+            .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
+            .collapsible(false)
+            .resizable(false)
+            .show(ctx, |ui| {
+                ui.set_width(330.0);
+                ui.label(
+                    RichText::new(i18n::tr(self.lang, "capture.question"))
+                        .size(12.0)
+                        .color(Color32::from_gray(205)),
+                );
+                ui.add_space(2.0);
+                ui.label(
+                    RichText::new(format!("{width} × {height} px"))
+                        .size(10.5)
+                        .color(Color32::from_gray(145)),
+                );
+                ui.add_space(8.0);
+                if ui
+                    .button(i18n::tr(self.lang, "capture.copy"))
+                    .clicked()
+                {
+                    action = Some(CaptureAction::Copy);
+                }
+                if ui
+                    .button(i18n::tr(self.lang, "capture.save"))
+                    .clicked()
+                {
+                    action = Some(CaptureAction::Save);
+                }
+                ui.add_space(4.0);
+                if ui
+                    .button(i18n::tr(self.lang, "capture.cancel"))
+                    .clicked()
+                {
+                    cancel = true;
+                }
+            });
+
+        if let Some(action) = action {
+            self.submit_capture(action, now);
+        } else if cancel {
+            self.capture_pending = None;
         }
     }
 
@@ -1155,6 +1263,13 @@ impl BladrApp {
             return;
         }
 
+        if self.capture_pending.is_some() {
+            if snap.escape {
+                self.capture_pending = None;
+            }
+            return;
+        }
+
         if self.capture_mode {
             if snap.escape || snap.screenshot {
                 self.cancel_capture();
@@ -1552,7 +1667,7 @@ impl BladrApp {
 
                     let zoomed_in = draw_size.x > avail.width() + 1.0
                         || draw_size.y > avail.height() + 1.0;
-                    if zoomed_in && !self.capture_mode {
+                    if zoomed_in && !self.capture_mode && self.capture_pending.is_none() {
                         if response.dragged() {
                             self.pan += response.drag_delta();
                             ui.ctx().set_cursor_icon(CursorIcon::Grabbing);
@@ -1561,7 +1676,8 @@ impl BladrApp {
                         }
                     }
 
-                    if response.double_clicked() && !self.capture_mode {
+                    if response.double_clicked() && !self.capture_mode && self.capture_pending.is_none()
+                    {
                         self.toggle_fullscreen(ctx, snap.time);
                     }
                     if self.fullscreen && response.secondary_clicked() {
@@ -1692,10 +1808,11 @@ impl BladrApp {
         self.draw_hud(ctx, snap);
         self.draw_histogram(ctx);
         self.draw_overlays(ctx, snap);
+        self.draw_capture_choice(ctx, snap.time);
     }
 
     fn draw_histogram(&self, ctx: &egui::Context) {
-        if !self.settings.histogram || self.capture_mode {
+        if !self.settings.histogram || self.capture_mode || self.capture_pending.is_some() {
             return;
         }
         let Some((_, tex)) = self.displayed_tex() else {
@@ -1978,7 +2095,7 @@ impl BladrApp {
     }
 
     fn draw_hud(&mut self, ctx: &egui::Context, snap: &Snapshot) {
-        if self.photos.is_empty() || self.capture_mode {
+        if self.photos.is_empty() || self.capture_mode || self.capture_pending.is_some() {
             return;
         }
         let lang = self.lang;
